@@ -50,7 +50,13 @@ function validateRequest(req, config) {
 function normalizeEvent(body) {
   return {
     eventId: body.event_id || body.id || null,
-    deviceId: body.device_id || body.deviceId || body.ident || null,
+    deviceId:
+      body.device_id ||
+      body.deviceId ||
+      body.ident ||
+      body['device.id'] ||
+      body.device?.id ||
+      null,
     userId: body.user_id || body.userId || null,
     eventType: body.event_type || body.type || 'flespi_event',
     title: body.title || 'Alerta OntaCoche',
@@ -59,6 +65,22 @@ function normalizeEvent(body) {
     ts: body.ts || Date.now(),
     raw: body,
   };
+}
+
+function extractRawEvents(body) {
+  if (Array.isArray(body)) {
+    return body.filter((item) => item && typeof item === 'object');
+  }
+
+  if (body && Array.isArray(body.data)) {
+    return body.data.filter((item) => item && typeof item === 'object');
+  }
+
+  if (body && typeof body === 'object') {
+    return [body];
+  }
+
+  return [];
 }
 
 function buildFcmPayload(event) {
@@ -113,66 +135,83 @@ module.exports = async function handler(req, res) {
     return res.status(validation.status).json({ ok: false, error: validation.error });
   }
 
-  const event = normalizeEvent(req.body);
-
-  if (!event.deviceId && !event.userId) {
-    writeLog('warn', 'missing routing fields', {
-      request_id: requestId,
-      event_id: event.eventId,
-    });
-    return res.status(400).json({ ok: false, error: 'device_id or user_id is required' });
+  const rawEvents = extractRawEvents(req.body);
+  if (rawEvents.length === 0) {
+    return res.status(400).json({ ok: false, error: 'invalid events payload' });
   }
+
+  const events = rawEvents.map(normalizeEvent);
 
   try {
     const firestore = getFirestore(config);
     const messaging = getMessaging(config);
 
-    const tokenRefsByValue = await getActiveTokens({
-      firestore,
-      collectionName: config.tokenCollection,
-      deviceId: event.deviceId,
-      userId: event.userId,
-    });
+    let sent = 0;
+    let failed = 0;
+    let deactivatedTotal = 0;
+    let processed = 0;
+    let skippedNoRouting = 0;
+    let skippedNoTokens = 0;
 
-    const tokens = Array.from(tokenRefsByValue.keys());
-    if (tokens.length === 0) {
-      writeLog('info', 'no active tokens found', {
-        request_id: requestId,
-        event_id: event.eventId,
-        device_id: event.deviceId,
-        user_id: event.userId,
+    for (const event of events) {
+      if (!event.deviceId && !event.userId) {
+        skippedNoRouting += 1;
+        continue;
+      }
+
+      processed += 1;
+
+      const tokenRefsByValue = await getActiveTokens({
+        firestore,
+        collectionName: config.tokenCollection,
+        deviceId: event.deviceId,
+        userId: event.userId,
       });
-      return res.status(202).json({ ok: true, message: 'no active tokens', sent: 0 });
+
+      const tokens = Array.from(tokenRefsByValue.keys());
+      if (tokens.length === 0) {
+        skippedNoTokens += 1;
+        continue;
+      }
+
+      const payload = buildFcmPayload(event);
+      const multicastResponse = await messaging.sendEachForMulticast({
+        ...payload,
+        tokens,
+      });
+
+      const deactivated = await deactivateInvalidTokens({
+        tokenRefsByValue,
+        multicastResponse,
+        tokens,
+      });
+
+      sent += multicastResponse.successCount;
+      failed += multicastResponse.failureCount;
+      deactivatedTotal += deactivated;
     }
 
-    const payload = buildFcmPayload(event);
-    const multicastResponse = await messaging.sendEachForMulticast({
-      ...payload,
-      tokens,
-    });
-
-    const deactivated = await deactivateInvalidTokens({
-      tokenRefsByValue,
-      multicastResponse,
-      tokens,
-    });
-
-    writeLog('info', 'fcm sent', {
+    const status = sent > 0 ? 200 : 202;
+    writeLog('info', 'fcm batch processed', {
       request_id: requestId,
-      event_id: event.eventId,
-      device_id: event.deviceId,
-      user_id: event.userId,
-      tokens_total: tokens.length,
-      success_count: multicastResponse.successCount,
-      failure_count: multicastResponse.failureCount,
-      deactivated_tokens: deactivated,
+      events_total: events.length,
+      events_processed: processed,
+      skipped_no_routing: skippedNoRouting,
+      skipped_no_tokens: skippedNoTokens,
+      sent,
+      failed,
+      deactivated_tokens: deactivatedTotal,
     });
 
-    return res.status(200).json({
+    return res.status(status).json({
       ok: true,
-      sent: multicastResponse.successCount,
-      failed: multicastResponse.failureCount,
-      deactivated,
+      events_total: events.length,
+      events_processed: processed,
+      skipped_no_routing: skippedNoRouting,
+      skipped_no_tokens: skippedNoTokens,
+      sent,
+      failed,
+      deactivated: deactivatedTotal,
     });
   } catch (error) {
     writeLog('error', 'webhook processing failed', {
