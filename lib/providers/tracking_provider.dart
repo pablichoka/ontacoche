@@ -23,11 +23,15 @@ final initialTrackingProvider = NotifierProvider<InitialTrackingController, Init
 class InitialTrackingController extends Notifier<InitialTrackingState> {
   bool _disposed = false;
   bool _initialized = false;
+  Timer? _syncTimer;
+
+  static const Duration _remoteSyncInterval = Duration(seconds: 20);
 
   @override
   InitialTrackingState build() {
     ref.onDispose(() {
       _disposed = true;
+      _syncTimer?.cancel();
     });
 
     if (!_initialized) {
@@ -43,6 +47,14 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
       return;
     }
 
+    _syncTimer?.cancel();
+    _syncTimer = Timer.periodic(_remoteSyncInterval, (_) {
+      if (_disposed) {
+        return;
+      }
+      unawaited(syncFromRemote());
+    });
+
     unawaited(syncFromRemote());
   }
 
@@ -56,33 +68,47 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
     bool remoteUpdated = false;
 
     try {
-      final String selector = ref.read(deviceSelectorProvider);
-      final DevicePosition? telemetryPosition = await ref
-          .read(flespiApiServiceProvider)
-          .getCurrentPosition(selector);
+      final String deviceId = ref.read(trackedDeviceIdProvider);
+      DevicePosition? remotePosition;
+
+      if (deviceId.isNotEmpty) {
+        remotePosition = await ref
+            .read(vercelConnectorServiceProvider)
+            .getCurrentDeviceState(deviceId);
+      }
 
       if (_disposed) {
         return;
       }
 
-      DevicePosition? remotePosition = telemetryPosition;
-
       if (remotePosition == null) {
-        final DeviceMessageSnapshot? latestMessage = await ref
+        final String selector = ref.read(deviceSelectorProvider);
+        final DevicePosition? telemetryPosition = await ref
             .read(flespiApiServiceProvider)
-            .getLatestPositionMessage(selector);
+            .getCurrentPosition(selector);
 
         if (_disposed) {
           return;
         }
 
-        if (latestMessage != null && latestMessage.hasCoordinates) {
-          remotePosition = latestMessage.toDevicePosition();
+        remotePosition = telemetryPosition;
+
+        if (remotePosition == null) {
+          final DeviceMessageSnapshot? latestMessage = await ref
+              .read(flespiApiServiceProvider)
+              .getLatestPositionMessage(selector);
+
+          if (_disposed) {
+            return;
+          }
+
+          if (latestMessage != null && latestMessage.hasCoordinates) {
+            remotePosition = latestMessage.toDevicePosition();
+          }
         }
       }
 
       if (remotePosition != null) {
-        final String deviceId = ref.read(trackedDeviceIdProvider);
         if (deviceId.isNotEmpty) {
           final TelemetryRecord record = TelemetryRecord.fromDevicePosition(
             deviceId: deviceId,

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/device_position.dart';
 import '../models/geofence.dart';
 import '../services/flespi_api_service.dart';
+import '../services/vercel_connector_service.dart';
 
 class FlespiReadRequest {
   const FlespiReadRequest({
@@ -113,6 +114,29 @@ final flespiApiServiceProvider = Provider<FlespiApiService>((Ref ref) {
   final FlespiApiService service = FlespiApiService(
     baseUrl: 'https://flespi.io',
     token: dotenv.env['FLESPI_TOKEN'] ?? '',
+  );
+
+  ref.onDispose(service.dispose);
+  return service;
+});
+
+final vercelConnectorBaseUrlProvider = Provider<String>((Ref ref) {
+  final String fromEnv = (dotenv.env['VERCEL_CONNECTOR_URL'] ?? '').trim();
+  if (fromEnv.isNotEmpty) {
+    return fromEnv;
+  }
+
+  return 'https://ontacoche.vercel.app';
+});
+
+final vercelConnectorReadBearerProvider = Provider<String>((Ref ref) {
+  return (dotenv.env['VERCEL_CONNECTOR_READ_BEARER'] ?? '').trim();
+});
+
+final vercelConnectorServiceProvider = Provider<VercelConnectorService>((Ref ref) {
+  final VercelConnectorService service = VercelConnectorService(
+    baseUrl: ref.watch(vercelConnectorBaseUrlProvider),
+    readBearer: ref.watch(vercelConnectorReadBearerProvider),
   );
 
   ref.onDispose(service.dispose);

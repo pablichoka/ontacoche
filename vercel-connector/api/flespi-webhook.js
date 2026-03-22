@@ -5,6 +5,44 @@ const {
   getActiveTokens,
 } = require('../src/tokenRepository');
 
+function firstDefined(source, keys) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key) && source[key] != null) {
+      return source[key];
+    }
+  }
+
+  return null;
+}
+
+function normalizeReportCode(value) {
+  if (value == null || value === '') {
+    return null;
+  }
+
+  const raw = String(value).trim();
+  if (/^\d+$/.test(raw)) {
+    return raw.padStart(4, '0');
+  }
+
+  return raw;
+}
+
+function asBoolean(value) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return ['true', '1', 'yes', 'on', 'alarm', 'active'].includes(normalized);
+  }
+
+  return false;
+}
+
 function getRequestId(req) {
   return req.headers['x-request-id'] || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -48,6 +86,14 @@ function validateRequest(req, config) {
 }
 
 function normalizeEvent(body) {
+  const reportCode = normalizeReportCode(firstDefined(body, [
+    'report.code',
+    'report_code',
+    'reportCode',
+    'message.code',
+    'code',
+  ]));
+
   return {
     eventId: body.event_id || body.id || null,
     deviceId:
@@ -60,6 +106,7 @@ function normalizeEvent(body) {
       null,
     userId: body.user_id || body.userId || null,
     eventType: body.event_type || body.type || 'flespi_event',
+    reportCode,
     title: body.title || 'Alerta OntaCoche',
     body: body.body || body.message || 'Se detecto una alerta en el tracker',
     severity: body.severity || 'info',
@@ -94,6 +141,7 @@ function buildFcmPayload(event) {
       event_id: String(event.eventId || ''),
       device_id: String(event.deviceId || ''),
       user_id: String(event.userId || ''),
+      report_code: String(event.reportCode || ''),
       event_type: String(event.eventType || ''),
       severity: String(event.severity || ''),
       ts: String(event.ts || ''),
@@ -110,6 +158,105 @@ function buildFcmPayload(event) {
       },
     },
   };
+}
+
+function classifyEvent(event, config) {
+  const raw = event.raw || {};
+  const alarmValue = firstDefined(raw, [
+    'alarm',
+    'vibration.alarm',
+    'alarm.vibration',
+    'vibration_alarm',
+  ]);
+
+  const vibrationAlarm =
+    asBoolean(firstDefined(raw, ['vibration.alarm', 'alarm.vibration', 'vibration_alarm'])) ||
+    (typeof alarmValue === 'string' && alarmValue.toLowerCase().includes('vibration'));
+
+  const geofenceAlarm =
+    asBoolean(firstDefined(raw, ['geofence.alarm', 'geofence_alarm'])) ||
+    firstDefined(raw, ['geofence.id', 'geofence.name', 'geofence.event']) != null ||
+    String(event.eventType || '').toLowerCase().includes('geofence');
+
+  const communicationActive = event.reportCode === '0200';
+  const shouldPush =
+    vibrationAlarm || geofenceAlarm || (communicationActive && config.pushOnCommunicationActive);
+
+  let title = event.title;
+  let body = event.body;
+  let severity = 'info';
+
+  if (vibrationAlarm) {
+    title = 'Alerta de vibracion';
+    body = 'Se detecto vibracion en el tracker';
+    severity = 'high';
+  } else if (geofenceAlarm) {
+    title = 'Alerta de geocerca';
+    body = 'Se detecto un evento de geocerca';
+    severity = 'high';
+  } else if (communicationActive) {
+    title = 'Comunicacion activa';
+    body = 'Tracker reportando posicion activa';
+    severity = 'info';
+  }
+
+  return {
+    vibrationAlarm,
+    geofenceAlarm,
+    communicationActive,
+    shouldPush,
+    title,
+    body,
+    severity,
+  };
+}
+
+function buildStateSnapshot(event, classification) {
+  const raw = event.raw || {};
+  return {
+    device_id: event.deviceId,
+    user_id: event.userId || null,
+    report_code: event.reportCode || null,
+    event_type: event.eventType || null,
+    latitude: firstDefined(raw, ['position.latitude', 'latitude']),
+    longitude: firstDefined(raw, ['position.longitude', 'longitude']),
+    speed: firstDefined(raw, ['position.speed', 'speed']),
+    battery_level: firstDefined(raw, ['battery.level', 'battery_level']),
+    alarm: firstDefined(raw, ['alarm']),
+    vibration_alarm: classification.vibrationAlarm,
+    geofence_alarm: classification.geofenceAlarm,
+    communication_active: classification.communicationActive,
+    payload: raw,
+    source_ts: event.ts || null,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function persistEvent({ firestore, config, event, classification }) {
+  if (!event.deviceId) {
+    return;
+  }
+
+  const snapshot = buildStateSnapshot(event, classification);
+
+  if (classification.communicationActive) {
+    await firestore
+      .collection(config.deviceStateCollection)
+      .doc(String(event.deviceId))
+      .set(snapshot, { merge: true });
+
+    if (config.storeStateHistory) {
+      await firestore.collection(config.stateHistoryCollection).add(snapshot);
+    }
+  }
+
+  if (classification.vibrationAlarm || classification.geofenceAlarm) {
+    await firestore.collection(config.alertsCollection).add({
+      ...snapshot,
+      event_id: event.eventId || null,
+      created_at: new Date().toISOString(),
+    });
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -151,16 +298,35 @@ module.exports = async function handler(req, res) {
     let failed = 0;
     let deactivatedTotal = 0;
     let processed = 0;
+    let persisted = 0;
     let skippedNoRouting = 0;
     let skippedNoTokens = 0;
+    let skippedNonAlert = 0;
 
     for (const event of events) {
       if (!event.deviceId && config.defaultDeviceId) {
         event.deviceId = config.defaultDeviceId;
       }
 
+      const classification = classifyEvent(event, config);
+
+      if (event.deviceId) {
+        await persistEvent({
+          firestore,
+          config,
+          event,
+          classification,
+        });
+        persisted += 1;
+      }
+
       if (!event.deviceId && !event.userId) {
         skippedNoRouting += 1;
+        continue;
+      }
+
+      if (!classification.shouldPush) {
+        skippedNonAlert += 1;
         continue;
       }
 
@@ -180,6 +346,10 @@ module.exports = async function handler(req, res) {
       }
 
       const payload = buildFcmPayload(event);
+      payload.notification.title = classification.title;
+      payload.notification.body = classification.body;
+      payload.data.severity = classification.severity;
+      payload.data.report_code = String(event.reportCode || '');
       const multicastResponse = await messaging.sendEachForMulticast({
         ...payload,
         tokens,
@@ -196,12 +366,14 @@ module.exports = async function handler(req, res) {
       deactivatedTotal += deactivated;
     }
 
-    const status = sent > 0 ? 200 : 202;
+    const status = 200;
     writeLog('info', 'fcm batch processed', {
       request_id: requestId,
       events_total: events.length,
       events_processed: processed,
+      events_persisted: persisted,
       skipped_no_routing: skippedNoRouting,
+      skipped_non_alert: skippedNonAlert,
       skipped_no_tokens: skippedNoTokens,
       sent,
       failed,
@@ -212,7 +384,9 @@ module.exports = async function handler(req, res) {
       ok: true,
       events_total: events.length,
       events_processed: processed,
+      events_persisted: persisted,
       skipped_no_routing: skippedNoRouting,
+      skipped_non_alert: skippedNonAlert,
       skipped_no_tokens: skippedNoTokens,
       sent,
       failed,

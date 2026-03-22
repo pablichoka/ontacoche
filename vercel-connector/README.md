@@ -6,6 +6,13 @@ Serverless webhook connector to deliver Flespi events to Firebase Cloud Messagin
 
 `tracker -> flespi -> vercel -> firebase -> app`
 
+Current behavior:
+
+- incoming stream events are classified in the webhook.
+- report `0200` updates current device state in Firestore (`device_last_state`) and can be appended to history.
+- push notifications are sent only for alert-like events (vibration/geofence by default).
+- regular active communication (`0200` without alarms) is persisted but not pushed unless explicitly enabled.
+
 ## endpoint
 
 - `POST /api/flespi-webhook`
@@ -32,6 +39,11 @@ Token registration endpoint:
 
 - `FCM_TOKEN_COLLECTION`: Firestore collection name. default: `fcm_tokens`
 - `DEFAULT_DEVICE_ID`: fallback routing key when incoming event has no `device_id`/`user_id` (useful for single-device stream setup)
+- `DEVICE_STATE_COLLECTION`: latest per-device state collection. default: `device_last_state`
+- `STATE_HISTORY_COLLECTION`: state history collection (for 0200 snapshots). default: `device_state_history`
+- `ALERTS_COLLECTION`: alert records collection. default: `device_alerts`
+- `STORE_STATE_HISTORY`: enable or disable storing 0200 history snapshots. default: `true`
+- `PUSH_ON_COMMUNICATION_ACTIVE`: send push for plain 0200 communication events. default: `false`
 - `LOG_LEVEL`: not enforced yet, default: `info`
 
 ## firestore token model
@@ -63,6 +75,13 @@ This project is designed for Vercel serverless runtime. You can still validate s
 npm install
 npm run check
 ```
+
+## app integration env vars (.env in Flutter app)
+
+- `VERCEL_CONNECTOR_URL`: base URL for connector APIs, example `https://ontacoche.vercel.app`
+- `VERCEL_CONNECTOR_READ_BEARER`: optional bearer for `GET /api/device-state` if `APP_READ_BEARER` is set in Vercel
+- `FCM_TOKEN_SYNC_URL`: should point to `https://<project>.vercel.app/api/register-token`
+- `FCM_TOKEN_SYNC_BEARER`: must match `FCM_TOKEN_SYNC_BEARER` env var configured in Vercel
 
 ## deploy in vercel
 
