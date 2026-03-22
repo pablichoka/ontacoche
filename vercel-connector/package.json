@@ -1,0 +1,18 @@
+{
+  "name": "ontacoche-vercel-connector",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Serverless webhook connector from Flespi to Firebase Cloud Messaging",
+  "main": "api/flespi-webhook.js",
+  "scripts": {
+    "lint": "echo \"No lint configured\"",
+    "test": "echo \"No tests configured\"",
+    "check": "node --check api/flespi-webhook.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.4.0"
+  }
+}
