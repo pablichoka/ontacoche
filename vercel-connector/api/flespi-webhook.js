@@ -56,6 +56,7 @@ function normalizeEvent(body) {
       body.ident ||
       body['device.id'] ||
       body.device?.id ||
+      body.device ||
       null,
     userId: body.user_id || body.userId || null,
     eventType: body.event_type || body.type || 'flespi_event',
@@ -154,6 +155,10 @@ module.exports = async function handler(req, res) {
     let skippedNoTokens = 0;
 
     for (const event of events) {
+      if (!event.deviceId && config.defaultDeviceId) {
+        event.deviceId = config.defaultDeviceId;
+      }
+
       if (!event.deviceId && !event.userId) {
         skippedNoRouting += 1;
         continue;
@@ -216,9 +221,6 @@ module.exports = async function handler(req, res) {
   } catch (error) {
     writeLog('error', 'webhook processing failed', {
       request_id: requestId,
-      event_id: event.eventId,
-      device_id: event.deviceId,
-      user_id: event.userId,
       error_code: error.code || null,
       error: error.message,
     });

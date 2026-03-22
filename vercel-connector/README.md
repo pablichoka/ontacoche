@@ -23,6 +23,7 @@ Serverless webhook connector to deliver Flespi events to Firebase Cloud Messagin
 ## optional environment variables
 
 - `FCM_TOKEN_COLLECTION`: Firestore collection name. default: `fcm_tokens`
+- `DEFAULT_DEVICE_ID`: fallback routing key when incoming event has no `device_id`/`user_id` (useful for single-device stream setup)
 - `LOG_LEVEL`: not enforced yet, default: `info`
 
 ## firestore token model

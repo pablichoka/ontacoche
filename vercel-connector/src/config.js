@@ -22,6 +22,7 @@ function readConfig() {
     firebaseProjectId: process.env.FIREBASE_PROJECT_ID,
     firebaseClientEmail: process.env.FIREBASE_CLIENT_EMAIL,
     firebasePrivateKey: normalizedPrivateKey,
+    defaultDeviceId: (process.env.DEFAULT_DEVICE_ID || '').trim() || null,
     logLevel: process.env.LOG_LEVEL || 'info',
     tokenCollection: process.env.FCM_TOKEN_COLLECTION || 'fcm_tokens',
   };

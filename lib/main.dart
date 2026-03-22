@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'background/mqtt_background_service.dart';
 import 'firebase_options.dart';
 import 'main_layout.dart';
 import 'services/firebase_messaging_service.dart';
@@ -16,7 +15,6 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await initializeFirebaseMessaging();
-  await initializeBackgroundTrackingService();
   runApp(const ProviderScope(child: OntaCocheApp()));
 }
 

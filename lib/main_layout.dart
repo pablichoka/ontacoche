@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'background/mqtt_background_service.dart';
 import 'screens/history_screen.dart';
 import 'screens/map_screen.dart';
 import 'screens/alerts_screen.dart';
@@ -25,14 +24,6 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
     AlertsScreen(),
     SettingsScreen(),
   ];
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      startBackgroundTrackingServiceIfAllowed();
-    });
-  }
 
   void _onDestinationSelected(int index) {
     setState(() {
