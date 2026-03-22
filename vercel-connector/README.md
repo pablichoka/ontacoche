@@ -13,9 +13,17 @@ Serverless webhook connector to deliver Flespi events to Firebase Cloud Messagin
 - required content type: `application/json`
 - payload must include at least one routing field: `device_id` or `user_id`
 
+Token registration endpoint:
+
+- `POST /api/register-token`
+- required header: `Authorization: Bearer <FCM_TOKEN_SYNC_BEARER>`
+- required content type: `application/json`
+- payload must include `token` plus `device_id` or `user_id`
+
 ## required environment variables
 
 - `WEBHOOK_BEARER_SECRET`: shared secret used by Flespi webhook authorization header.
+- `FCM_TOKEN_SYNC_BEARER`: shared secret used by the mobile app when syncing FCM tokens.
 - `FIREBASE_PROJECT_ID`: Firebase project id.
 - `FIREBASE_CLIENT_EMAIL`: service account client email.
 - `FIREBASE_PRIVATE_KEY`: service account private key (escaped newlines are supported).
