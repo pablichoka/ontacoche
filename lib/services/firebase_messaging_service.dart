@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../firebase_options.dart';
+import 'fcm_token_sync_service.dart';
 
 const String _alertsChannelId = 'ontacoche_alerts';
 const String _alertsChannelName = 'Alertas de OntaCoche';
@@ -54,9 +55,13 @@ Future<void> initializeFirebaseMessaging() async {
 
   final String? token = await messaging.getToken();
   debugPrint('FCM token: $token');
+  if (token != null && token.isNotEmpty) {
+    await syncFcmTokenToFirestore(token);
+  }
 
-  messaging.onTokenRefresh.listen((String newToken) {
+  messaging.onTokenRefresh.listen((String newToken) async {
     debugPrint('FCM token refreshed: $newToken');
+    await syncFcmTokenToFirestore(newToken);
   });
 
   debugPrint('FCM permission status: ${settings.authorizationStatus}');

@@ -11,11 +11,11 @@ import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: '.env');
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await initializeFirebaseMessaging();
-  await dotenv.load(fileName: '.env');
   await initializeBackgroundTrackingService();
   runApp(const ProviderScope(child: OntaCocheApp()));
 }

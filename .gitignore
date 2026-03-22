@@ -122,3 +122,6 @@ app.*.symbols
 .fvmrc
 *.iml
 
+node_modules/
+.env
+.vercel
