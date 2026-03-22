@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "377240314400",
+    "project_id": "ontacoche",
+    "storage_bucket": "ontacoche.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:377240314400:android:352e68e542e7d946929245",
+        "android_client_info": {
+          "package_name": "com.ontacoche.tracker"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3xWktqQB-8DYcAtmTdxYrX_Ib3DDmv5g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

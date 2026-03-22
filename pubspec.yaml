@@ -1,0 +1,37 @@
+name: ontacoche
+description: Real-time GPS tracker monitor for Flespi devices.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.8.1 <4.0.0"
+
+dependencies:
+  firebase_core: ^4.5.0
+  firebase_messaging: ^16.0.2
+  flutter:
+    sdk: flutter
+  flutter_background_service: ^5.1.0
+  flutter_background_service_android: ^6.3.0
+  flutter_dotenv: ^5.2.1
+  flutter_local_notifications: ^19.0.0
+  flutter_map: ^7.0.2
+  flutter_riverpod: ^2.6.1
+  http: ^1.2.2
+  latlong2: ^0.9.1
+  mqtt_client: ^10.6.0
+  path: ^1.9.1
+  permission_handler: ^11.4.0
+  sqflite: ^2.4.2
+  url_launcher: ^6.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env
