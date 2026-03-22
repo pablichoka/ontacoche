@@ -180,9 +180,14 @@ module.exports = async function handler(req, res) {
       event_id: event.eventId,
       device_id: event.deviceId,
       user_id: event.userId,
+      error_code: error.code || null,
       error: error.message,
     });
 
-    return res.status(500).json({ ok: false, error: 'internal server error' });
+    return res.status(500).json({
+      ok: false,
+      error: 'internal server error',
+      code: error.code || 'unknown',
+    });
   }
 };
