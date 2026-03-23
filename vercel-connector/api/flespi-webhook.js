@@ -418,6 +418,7 @@ function buildStateSnapshot(event, classification) {
     vibration_alarm: classification.vibrationAlarm,
     geofence_alarm: classification.geofenceAlarm,
     geofence_name: classification.geofenceName,
+    geofence_status: firstDefined(raw, ['plugin.geofence.status', 'geofence.status']),
     geofence_enter: classification.geofenceEnter,
     geofence_exit: classification.geofenceExit,
     communication_active: classification.communicationActive,
@@ -433,32 +434,84 @@ async function persistEvent({ firestore, config, event, classification }) {
     return { alertCreated: false, dedupeKey: null };
   }
 
-  const snapshot = buildStateSnapshot(event, classification);
+  const raw = event.raw || {};
+  const stateRef = firestore
+    .collection(config.deviceStateCollection)
+    .doc(String(event.deviceId));
+
+  let previousState = null;
+  let currentGeofenceStatus = null;
+  let previousGeofenceStatus = null;
 
   if (classification.communicationActive) {
-    await firestore
-      .collection(config.deviceStateCollection)
-      .doc(String(event.deviceId))
-      .set(snapshot, { merge: true });
+    const existingState = await stateRef.get();
+    previousState = existingState.exists ? (existingState.data() || null) : null;
+
+    const currentRaw = firstDefined(raw, ['plugin.geofence.status', 'geofence.status']);
+    currentGeofenceStatus = currentRaw == null ? null : asBoolean(currentRaw);
+
+    const previousRaw = previousState ? previousState.geofence_status : null;
+    previousGeofenceStatus = previousRaw == null ? null : asBoolean(previousRaw);
+  }
+
+  let effectiveClassification = classification;
+  if (
+    classification.communicationActive &&
+    !classification.geofenceAlarm &&
+    currentGeofenceStatus != null &&
+    previousGeofenceStatus != null &&
+    currentGeofenceStatus !== previousGeofenceStatus
+  ) {
+    const inferredEnter = currentGeofenceStatus === true;
+    const inferredExit = currentGeofenceStatus === false;
+    const inferredName =
+      classification.geofenceName ||
+      firstDefined(raw, ['plugin.geofence.name', 'geofence.name', 'geofence']) ||
+      (previousState ? previousState.geofence_name : null) ||
+      null;
+
+    effectiveClassification = {
+      ...classification,
+      geofenceAlarm: true,
+      geofenceEnter: inferredEnter,
+      geofenceExit: inferredExit,
+      geofenceName: inferredName,
+      shouldPush: true,
+      severity: 'high',
+      title: 'Alerta de geocerca',
+      body: inferredName
+        ? (inferredEnter
+          ? `Entrada en geocerca: ${inferredName}`
+          : `Salida de geocerca: ${inferredName}`)
+        : (inferredEnter
+          ? 'Entrada en geocerca detectada'
+          : 'Salida de geocerca detectada'),
+    };
+  }
+
+  const snapshot = buildStateSnapshot(event, effectiveClassification);
+
+  if (classification.communicationActive) {
+    await stateRef.set(snapshot, { merge: true });
 
     if (config.storeStateHistory) {
       await firestore.collection(config.stateHistoryCollection).add(snapshot);
     }
   }
 
-  if (classification.vibrationAlarm || classification.geofenceAlarm) {
-    const dedupeBucket = classification.vibrationAlarm
+  if (effectiveClassification.vibrationAlarm || effectiveClassification.geofenceAlarm) {
+    const dedupeBucket = effectiveClassification.vibrationAlarm
       ? Math.floor(snapshot.source_ts_ms / (VIBRATION_DEDUPE_WINDOW_SECONDS * 1000))
       : Math.floor(snapshot.source_ts_ms / (GEOFENCE_DEDUPE_WINDOW_SECONDS * 1000));
 
-    const alertKind = classification.vibrationAlarm
+    const alertKind = effectiveClassification.vibrationAlarm
       ? 'vibration_alert'
-      : (classification.geofenceEnter ? 'geofence_enter' : 'geofence_exit');
+      : (effectiveClassification.geofenceEnter ? 'geofence_enter' : 'geofence_exit');
 
     const dedupeSource = [
       String(event.deviceId),
       alertKind,
-      classification.geofenceName || '',
+      effectiveClassification.geofenceName || '',
       String(dedupeBucket),
       String(event.eventId || ''),
     ].join('|');
@@ -472,8 +525,8 @@ async function persistEvent({ firestore, config, event, classification }) {
       dedupe_key: dedupeKey,
       event_id: event.eventId || null,
       event_kind: alertKind,
-      message: classification.body,
-      severity: classification.severity,
+      message: effectiveClassification.body,
+      severity: effectiveClassification.severity,
       created_at: existing.exists
         ? (existing.data()?.created_at || new Date().toISOString())
         : new Date().toISOString(),
@@ -484,10 +537,16 @@ async function persistEvent({ firestore, config, event, classification }) {
       alertCreated: !existing.exists,
       dedupeKey,
       eventKind: alertKind,
+      classification: effectiveClassification,
     };
   }
 
-  return { alertCreated: false, dedupeKey: null, eventKind: null };
+  return {
+    alertCreated: false,
+    dedupeKey: null,
+    eventKind: null,
+    classification: effectiveClassification,
+  };
 }
 
 module.exports = async function handler(req, res) {
@@ -557,17 +616,20 @@ module.exports = async function handler(req, res) {
         persisted += 1;
       }
 
+      const effectiveClassification =
+        persistenceResult.classification || classification;
+
       if (!event.deviceId && !event.userId) {
         skippedNoRouting += 1;
         continue;
       }
 
-      if (!classification.shouldPush) {
+      if (!effectiveClassification.shouldPush) {
         skippedNonAlert += 1;
         continue;
       }
 
-      if ((classification.vibrationAlarm || classification.geofenceAlarm) && !persistenceResult.alertCreated) {
+      if ((effectiveClassification.vibrationAlarm || effectiveClassification.geofenceAlarm) && !persistenceResult.alertCreated) {
         skippedDuplicatedAlert += 1;
         continue;
       }
@@ -588,9 +650,9 @@ module.exports = async function handler(req, res) {
       }
 
       const payload = buildFcmPayload(event);
-      payload.notification.title = classification.title;
-      payload.notification.body = classification.body;
-      payload.data.severity = classification.severity;
+      payload.notification.title = effectiveClassification.title;
+      payload.notification.body = effectiveClassification.body;
+      payload.data.severity = effectiveClassification.severity;
       payload.data.report_code = String(event.reportCode || '');
       payload.data.event_kind = String(persistenceResult.eventKind || event.eventType || '');
       const multicastResponse = await messaging.sendEachForMulticast({
