@@ -3,22 +3,21 @@ import 'dart:async';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/device_message.dart';
 import '../models/device_position.dart';
 import '../models/tracking_flow.dart';
 import '../models/telemetry_record.dart';
 import '../utils/parsers.dart';
 import 'api_provider.dart';
-import 'mqtt_provider.dart';
 import 'telemetry_provider.dart';
 
 final trackedDeviceIdProvider = Provider<String>((Ref ref) {
   return (dotenv.env['DEVICE_ID'] ?? '').trim();
 });
 
-final initialTrackingProvider = NotifierProvider<InitialTrackingController, InitialTrackingState>(
-  InitialTrackingController.new,
-);
+final initialTrackingProvider =
+    NotifierProvider<InitialTrackingController, InitialTrackingState>(
+      InitialTrackingController.new,
+    );
 
 class InitialTrackingController extends Notifier<InitialTrackingState> {
   bool _disposed = false;
@@ -81,33 +80,6 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
         return;
       }
 
-      if (remotePosition == null) {
-        final String selector = ref.read(deviceSelectorProvider);
-        final DevicePosition? telemetryPosition = await ref
-            .read(flespiApiServiceProvider)
-            .getCurrentPosition(selector);
-
-        if (_disposed) {
-          return;
-        }
-
-        remotePosition = telemetryPosition;
-
-        if (remotePosition == null) {
-          final DeviceMessageSnapshot? latestMessage = await ref
-              .read(flespiApiServiceProvider)
-              .getLatestPositionMessage(selector);
-
-          if (_disposed) {
-            return;
-          }
-
-          if (latestMessage != null && latestMessage.hasCoordinates) {
-            remotePosition = latestMessage.toDevicePosition();
-          }
-        }
-      }
-
       if (remotePosition != null) {
         if (deviceId.isNotEmpty) {
           final TelemetryRecord record = TelemetryRecord.fromDevicePosition(
@@ -128,8 +100,9 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
       state = state.copyWith(errorMessage: error.toString());
     }
 
-    final TelemetryRecord? stored =
-        await ref.read(telemetryDatabaseServiceProvider).fetchLatestRecord();
+    final TelemetryRecord? stored = await ref
+        .read(telemetryDatabaseServiceProvider)
+        .fetchLatestRecord();
     if (_disposed) {
       return;
     }
@@ -138,7 +111,8 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
       state = state.copyWith(
         status: TrackingServiceStatus.failure,
         source: InitialTrackingSource.fallback,
-        errorMessage: state.errorMessage ?? 'No se encontró ninguna posición inicial',
+        errorMessage:
+            state.errorMessage ?? 'No se encontró ninguna posición inicial',
         clearPosition: true,
         clearResolvedAt: true,
       );
@@ -156,7 +130,9 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
 
     state = state.copyWith(
       status: TrackingServiceStatus.ok,
-      source: remoteUpdated ? InitialTrackingSource.remote : InitialTrackingSource.persisted,
+      source: remoteUpdated
+          ? InitialTrackingSource.remote
+          : InitialTrackingSource.persisted,
       position: storedPosition,
       resolvedAt: stored.recordedAt,
       clearErrorMessage: true,
@@ -164,7 +140,9 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
   }
 }
 
-final initialTrackingIndicatorProvider = Provider<TrackingIndicatorData>((Ref ref) {
+final initialTrackingIndicatorProvider = Provider<TrackingIndicatorData>((
+  Ref ref,
+) {
   final InitialTrackingState state = ref.watch(initialTrackingProvider);
   return TrackingIndicatorData(
     kind: TrackingIndicatorKind.initial,
@@ -177,16 +155,19 @@ final initialTrackingIndicatorProvider = Provider<TrackingIndicatorData>((Ref re
   );
 });
 
-final realtimeTrackingStatusProvider = Provider<TrackingServiceStatus>((Ref ref) {
-  final AsyncValue<DevicePosition> latestPosition = ref.watch(positionStreamProvider);
-  return latestPosition.when(
-    data: (DevicePosition position) {
-      final DateTime? timestamp = position.timestamp;
-      if (timestamp == null) {
+final realtimeTrackingStatusProvider = Provider<TrackingServiceStatus>((
+  Ref ref,
+) {
+  final AsyncValue<TelemetryRecord?> latest = ref.watch(
+    latestStoredTelemetryProvider,
+  );
+  return latest.when(
+    data: (TelemetryRecord? record) {
+      if (record == null) {
         return TrackingServiceStatus.connecting;
       }
 
-      final Duration age = Parsers.now().difference(timestamp);
+      final Duration age = Parsers.now().difference(record.recordedAt);
       if (age <= const Duration(hours: 24)) {
         return TrackingServiceStatus.ok;
       }
@@ -197,15 +178,20 @@ final realtimeTrackingStatusProvider = Provider<TrackingServiceStatus>((Ref ref)
   );
 });
 
-final realtimeTrackingIndicatorProvider = Provider<TrackingIndicatorData>((Ref ref) {
-  final TrackingServiceStatus status = ref.watch(realtimeTrackingStatusProvider);
+final realtimeTrackingIndicatorProvider = Provider<TrackingIndicatorData>((
+  Ref ref,
+) {
+  final TrackingServiceStatus status = ref.watch(
+    realtimeTrackingStatusProvider,
+  );
   return TrackingIndicatorData(
     kind: TrackingIndicatorKind.realtime,
     status: status,
     tooltip: switch (status) {
       TrackingServiceStatus.connecting => 'Conectando en tiempo real',
       TrackingServiceStatus.ok => 'Información en vivo',
-      TrackingServiceStatus.failure => 'No está disponible la información en vivo',
+      TrackingServiceStatus.failure =>
+        'No está disponible la información en vivo',
     },
   );
 });

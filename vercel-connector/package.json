@@ -7,7 +7,7 @@
   "scripts": {
     "lint": "echo \"No lint configured\"",
     "test": "echo \"No tests configured\"",
-    "check": "node --check api/flespi-webhook.js && node --check api/register-token.js && node --check api/device-state.js"
+    "check": "node --check api/flespi-webhook.js && node --check api/register-token.js && node --check api/device-state.js && node --check api/device-alerts.js"
   },
   "engines": {
     "node": ">=20"

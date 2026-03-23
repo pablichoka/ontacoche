@@ -40,8 +40,10 @@ class FlespiCommandRequest {
   final String? condition;
 }
 
-typedef FlespiReadDevice = Future<Map<String, dynamic>> Function(FlespiReadRequest request);
-typedef FlespiExecuteCommand = Future<Map<String, dynamic>> Function(FlespiCommandRequest request);
+typedef FlespiReadDevice =
+    Future<Map<String, dynamic>> Function(FlespiReadRequest request);
+typedef FlespiExecuteCommand =
+    Future<Map<String, dynamic>> Function(FlespiCommandRequest request);
 
 final deviceIdentProvider = Provider<String>((Ref ref) {
   return dotenv.env['DEVICE_IDENT'] ?? FlespiApiService.defaultDeviceIdent;
@@ -64,50 +66,34 @@ final deviceSelectorProvider = Provider<String>((Ref ref) {
   );
 });
 
-final initialDevicePositionProvider = FutureProvider<DevicePosition?>((Ref ref) async {
-  final FlespiApiService service = ref.watch(flespiApiServiceProvider);
-  final String selector = ref.watch(deviceSelectorProvider);
-  final Map<String, dynamic> response = await service.getDevice(
-    selector,
-    fields: const <String>['telemetry'],
-  );
-
-  final List<dynamic> result = response['result'] as List<dynamic>? ?? const <dynamic>[];
-  if (result.isEmpty) {
+final initialDevicePositionProvider = FutureProvider<DevicePosition?>((
+  Ref ref,
+) async {
+  final String deviceId = (dotenv.env['DEVICE_ID'] ?? '').trim();
+  if (deviceId.isEmpty) {
     return null;
   }
 
-  final Map<String, dynamic> payload = Map<String, dynamic>.from(result.first as Map);
-  final Map<String, dynamic>? telemetry = payload['telemetry'] is Map
-      ? Map<String, dynamic>.from(payload['telemetry'] as Map)
-      : null;
-  if (telemetry == null || !telemetry.containsKey('position')) {
-    return null;
-  }
-
-  return DevicePosition.fromFlespiJson(telemetry);
+  return ref
+      .watch(vercelConnectorServiceProvider)
+      .getCurrentDeviceState(deviceId);
 });
 
 final deviceGeofencesProvider = FutureProvider<List<Geofence>>((Ref ref) async {
-  final FlespiApiService service = ref.watch(flespiApiServiceProvider);
-  final String selector = ref.watch(deviceSelectorProvider);
-  return service.getDeviceGeofences(selector);
+  return const <Geofence>[];
 });
 
-final deviceDetailsProvider = FutureProvider<Map<String, dynamic>>((Ref ref) async {
-  final FlespiApiService service = ref.watch(flespiApiServiceProvider);
-  final String selector = ref.watch(deviceSelectorProvider);
-  final Map<String, dynamic> response = await service.getDevice(
-    selector,
-    fields: const <String>['id', 'name', 'connected', 'last_active', 'protocol_name', 'device_type_name'],
-  );
-
-  final List<dynamic> result = response['result'] as List<dynamic>? ?? const <dynamic>[];
-  if (result.isEmpty) {
-    throw Exception('Device not found');
+final deviceDetailsProvider = FutureProvider<Map<String, dynamic>>((
+  Ref ref,
+) async {
+  final String deviceId = (dotenv.env['DEVICE_ID'] ?? '').trim();
+  if (deviceId.isEmpty) {
+    throw Exception('DEVICE_ID is required in .env');
   }
 
-  return Map<String, dynamic>.from(result.first as Map);
+  return ref
+      .watch(vercelConnectorServiceProvider)
+      .getSettingsDeviceInfo(deviceId);
 });
 
 final flespiApiServiceProvider = Provider<FlespiApiService>((Ref ref) {
@@ -133,7 +119,9 @@ final vercelConnectorReadBearerProvider = Provider<String>((Ref ref) {
   return (dotenv.env['VERCEL_CONNECTOR_READ_BEARER'] ?? '').trim();
 });
 
-final vercelConnectorServiceProvider = Provider<VercelConnectorService>((Ref ref) {
+final vercelConnectorServiceProvider = Provider<VercelConnectorService>((
+  Ref ref,
+) {
   final VercelConnectorService service = VercelConnectorService(
     baseUrl: ref.watch(vercelConnectorBaseUrlProvider),
     readBearer: ref.watch(vercelConnectorReadBearerProvider),
@@ -143,12 +131,16 @@ final vercelConnectorServiceProvider = Provider<VercelConnectorService>((Ref ref
   return service;
 });
 
-final flespiRegisteredCatalogProvider = Provider<FlespiDeviceCatalog>((Ref ref) {
+final flespiRegisteredCatalogProvider = Provider<FlespiDeviceCatalog>((
+  Ref ref,
+) {
   final String ident = ref.watch(deviceIdentProvider);
   return FlespiApiService.registeredCatalog(ident: ident);
 });
 
-final flespiCapabilitiesProvider = FutureProvider<Map<String, dynamic>>((Ref ref) async {
+final flespiCapabilitiesProvider = FutureProvider<Map<String, dynamic>>((
+  Ref ref,
+) async {
   final FlespiApiService service = ref.watch(flespiApiServiceProvider);
   final String selector = ref.watch(deviceSelectorProvider);
   return service.getRegisteredCapabilities(selector);

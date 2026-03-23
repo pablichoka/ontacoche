@@ -18,7 +18,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final ScrollController _scrollController = ScrollController();
 
   bool _isSaving = false;
-  bool _didScrollOnce = false;
   double _lastKeyboardHeight = 0.0;
 
   @override
@@ -135,8 +134,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           }
 
           // Detectar cuando se cierra el teclado y limpiar el foco
-          final currentKeyboardHeight =
-              MediaQuery.of(context).viewInsets.bottom;
+          final currentKeyboardHeight = MediaQuery.of(
+            context,
+          ).viewInsets.bottom;
           if (_lastKeyboardHeight > 0 &&
               currentKeyboardHeight == 0 &&
               _nameFocus.hasFocus) {
@@ -220,9 +220,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       style: TextStyle(color: Colors.grey, fontSize: 12),
                     ),
                   ),
-                  SizedBox(
-                    height: viewInsets.bottom + 100,
-                  ),
+                  SizedBox(height: viewInsets.bottom + 100),
                 ],
               ),
             ),
@@ -243,7 +241,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -300,7 +298,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),

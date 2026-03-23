@@ -1,11 +1,6 @@
 import '../utils/parsers.dart';
 
-enum DeviceAlertType {
-  geofence,
-  vibration,
-  lowBattery,
-  movement, unknown,
-}
+enum DeviceAlertType { geofence, vibration, lowBattery, movement, unknown }
 
 class DeviceAlert {
   const DeviceAlert({
@@ -24,35 +19,99 @@ class DeviceAlert {
   final String? geofenceName;
   final bool? isEntering;
 
+  static DeviceAlert? fromBackendJson(Map<String, dynamic> json) {
+    final String eventKind = (json['event_kind'] ?? '').toString();
+
+    DeviceAlertType type = DeviceAlertType.unknown;
+    bool? isEntering;
+
+    if (eventKind == 'vibration_alert') {
+      type = DeviceAlertType.vibration;
+    } else if (eventKind == 'geofence_enter') {
+      type = DeviceAlertType.geofence;
+      isEntering = true;
+    } else if (eventKind == 'geofence_exit') {
+      type = DeviceAlertType.geofence;
+      isEntering = false;
+    } else if ((json['vibration_alarm'] == true)) {
+      type = DeviceAlertType.vibration;
+    } else if ((json['geofence_alarm'] == true)) {
+      type = DeviceAlertType.geofence;
+      isEntering = json['geofence_enter'] == true
+          ? true
+          : (json['geofence_exit'] == true ? false : null);
+    }
+
+    if (type == DeviceAlertType.unknown) {
+      return null;
+    }
+
+    final DateTime timestamp =
+        Parsers.fromUnknown(json['source_ts']) ??
+        Parsers.fromUnknown(json['updated_at']) ??
+        Parsers.fromUnknown(json['created_at']) ??
+        Parsers.now();
+
+    final String? geofenceName = json['geofence_name']?.toString();
+    final String message =
+        (json['message']?.toString().trim().isNotEmpty ?? false)
+        ? json['message'].toString()
+        : switch (type) {
+            DeviceAlertType.vibration => '¡Vibración detectada!',
+            DeviceAlertType.geofence =>
+              isEntering == true
+                  ? 'Entrada en geocerca detectada'
+                  : 'Salida de geocerca detectada',
+            DeviceAlertType.lowBattery => 'Batería baja detectada',
+            DeviceAlertType.movement => 'Movimiento no autorizado detectado',
+            DeviceAlertType.unknown => 'Alerta detectada',
+          };
+
+    return DeviceAlert(
+      type: type,
+      message: message,
+      timestamp: timestamp,
+      value: json['payload'] ?? json,
+      geofenceName: geofenceName,
+      isEntering: isEntering,
+    );
+  }
+
   static List<DeviceAlert> fromDeviceMessage(Map<String, dynamic> json) {
     final List<DeviceAlert> alerts = <DeviceAlert>[];
     final DateTime ts = _timestampFromMessage(json);
 
     if (json['vibration.alarm'] == true) {
-      alerts.add(DeviceAlert(
-        type: DeviceAlertType.vibration,
-        message: '¡Vibración detectada!',
-        timestamp: ts,
-        value: true,
-      ));
+      alerts.add(
+        DeviceAlert(
+          type: DeviceAlertType.vibration,
+          message: '¡Vibración detectada!',
+          timestamp: ts,
+          value: true,
+        ),
+      );
     }
 
     if (json['battery.low.alarm'] == true) {
-      alerts.add(DeviceAlert(
-        type: DeviceAlertType.lowBattery,
-        message: 'Batería baja detectada',
-        timestamp: ts,
-        value: true,
-      ));
+      alerts.add(
+        DeviceAlert(
+          type: DeviceAlertType.lowBattery,
+          message: 'Batería baja detectada',
+          timestamp: ts,
+          value: true,
+        ),
+      );
     }
 
     if (json['illegal.movement.alarm'] == true) {
-      alerts.add(DeviceAlert(
-        type: DeviceAlertType.movement,
-        message: 'Movimiento no autorizado detectado',
-        timestamp: ts,
-        value: true,
-      ));
+      alerts.add(
+        DeviceAlert(
+          type: DeviceAlertType.movement,
+          message: 'Movimiento no autorizado detectado',
+          timestamp: ts,
+          value: true,
+        ),
+      );
     }
 
     return alerts;
@@ -72,11 +131,11 @@ class DeviceAlert {
       type: DeviceAlertType.geofence,
       message: isEntering
           ? geofenceName.isEmpty
-              ? 'Entrada en geocerca detectada'
-              : 'Entrada en geocerca: $geofenceName'
+                ? 'Entrada en geocerca detectada'
+                : 'Entrada en geocerca: $geofenceName'
           : geofenceName.isEmpty
-              ? 'Salida de geocerca detectada'
-              : 'Salida de geocerca: $geofenceName',
+          ? 'Salida de geocerca detectada'
+          : 'Salida de geocerca: $geofenceName',
       timestamp: ts,
       value: type,
       geofenceName: geofenceName.isEmpty ? null : geofenceName,

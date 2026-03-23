@@ -5,6 +5,9 @@ const {
   getActiveTokens,
 } = require('../src/tokenRepository');
 
+const VIBRATION_DEDUPE_WINDOW_SECONDS = 45;
+const GEOFENCE_DEDUPE_WINDOW_SECONDS = 30;
+
 function firstDefined(source, keys) {
   for (const key of keys) {
     if (Object.prototype.hasOwnProperty.call(source, key) && source[key] != null) {
@@ -41,6 +44,53 @@ function asBoolean(value) {
   }
 
   return false;
+}
+
+function parseTimestampToMs(value) {
+  if (value == null || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    if (value > 1e12) {
+      return Math.floor(value);
+    }
+    if (value > 1e9) {
+      return Math.floor(value * 1000);
+    }
+    return Math.floor(value * 1000);
+  }
+
+  if (typeof value === 'string') {
+    const numeric = Number(value);
+    if (!Number.isNaN(numeric)) {
+      return parseTimestampToMs(numeric);
+    }
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function toIsoFromMs(ms) {
+  if (ms == null) {
+    return new Date().toISOString();
+  }
+
+  return new Date(ms).toISOString();
+}
+
+function makeStableId(input) {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) - hash) + input.charCodeAt(i);
+    hash |= 0;
+  }
+
+  return `k${Math.abs(hash).toString(36)}`;
 }
 
 function getRequestId(req) {
@@ -173,10 +223,28 @@ function classifyEvent(event, config) {
     asBoolean(firstDefined(raw, ['vibration.alarm', 'alarm.vibration', 'vibration_alarm'])) ||
     (typeof alarmValue === 'string' && alarmValue.toLowerCase().includes('vibration'));
 
-  const geofenceAlarm =
-    asBoolean(firstDefined(raw, ['geofence.alarm', 'geofence_alarm'])) ||
-    firstDefined(raw, ['geofence.id', 'geofence.name', 'geofence.event']) != null ||
-    String(event.eventType || '').toLowerCase().includes('geofence');
+  const eventType = String(event.eventType || '').toLowerCase();
+  const intervalType = String(firstDefined(raw, ['type', 'interval.type', 'geofence.event']) || '').toLowerCase();
+  const geofenceName = firstDefined(raw, [
+    'geofence',
+    'geofence.name',
+    'plugin.geofence.name',
+    'name',
+  ]);
+
+  const geofenceEnter =
+    intervalType === 'enter' ||
+    intervalType === 'activated' ||
+    eventType.includes('geofence_enter') ||
+    eventType.includes('activated');
+
+  const geofenceExit =
+    intervalType === 'exit' ||
+    intervalType === 'deactivated' ||
+    eventType.includes('geofence_exit') ||
+    eventType.includes('deactivated');
+
+  const geofenceAlarm = geofenceEnter || geofenceExit;
 
   const communicationActive = event.reportCode === '0200';
   const shouldPush =
@@ -192,7 +260,13 @@ function classifyEvent(event, config) {
     severity = 'high';
   } else if (geofenceAlarm) {
     title = 'Alerta de geocerca';
-    body = 'Se detecto un evento de geocerca';
+    if (geofenceName && geofenceEnter) {
+      body = `Entrada en geocerca: ${geofenceName}`;
+    } else if (geofenceName && geofenceExit) {
+      body = `Salida de geocerca: ${geofenceName}`;
+    } else {
+      body = 'Se detecto un evento de geocerca';
+    }
     severity = 'high';
   } else if (communicationActive) {
     title = 'Comunicacion activa';
@@ -203,6 +277,9 @@ function classifyEvent(event, config) {
   return {
     vibrationAlarm,
     geofenceAlarm,
+    geofenceEnter,
+    geofenceExit,
+    geofenceName: geofenceName ? String(geofenceName) : null,
     communicationActive,
     shouldPush,
     title,
@@ -213,6 +290,11 @@ function classifyEvent(event, config) {
 
 function buildStateSnapshot(event, classification) {
   const raw = event.raw || {};
+  const sourceTsMs =
+    parseTimestampToMs(firstDefined(raw, ['server.timestamp', 'timestamp', 'end', 'begin'])) ||
+    parseTimestampToMs(event.ts) ||
+    Date.now();
+
   return {
     device_id: event.deviceId,
     user_id: event.userId || null,
@@ -225,16 +307,20 @@ function buildStateSnapshot(event, classification) {
     alarm: firstDefined(raw, ['alarm']),
     vibration_alarm: classification.vibrationAlarm,
     geofence_alarm: classification.geofenceAlarm,
+    geofence_name: classification.geofenceName,
+    geofence_enter: classification.geofenceEnter,
+    geofence_exit: classification.geofenceExit,
     communication_active: classification.communicationActive,
     payload: raw,
-    source_ts: event.ts || null,
+    source_ts: toIsoFromMs(sourceTsMs),
+    source_ts_ms: sourceTsMs,
     updated_at: new Date().toISOString(),
   };
 }
 
 async function persistEvent({ firestore, config, event, classification }) {
   if (!event.deviceId) {
-    return;
+    return { alertCreated: false, dedupeKey: null };
   }
 
   const snapshot = buildStateSnapshot(event, classification);
@@ -251,12 +337,47 @@ async function persistEvent({ firestore, config, event, classification }) {
   }
 
   if (classification.vibrationAlarm || classification.geofenceAlarm) {
-    await firestore.collection(config.alertsCollection).add({
+    const dedupeBucket = classification.vibrationAlarm
+      ? Math.floor(snapshot.source_ts_ms / (VIBRATION_DEDUPE_WINDOW_SECONDS * 1000))
+      : Math.floor(snapshot.source_ts_ms / (GEOFENCE_DEDUPE_WINDOW_SECONDS * 1000));
+
+    const alertKind = classification.vibrationAlarm
+      ? 'vibration_alert'
+      : (classification.geofenceEnter ? 'geofence_enter' : 'geofence_exit');
+
+    const dedupeSource = [
+      String(event.deviceId),
+      alertKind,
+      classification.geofenceName || '',
+      String(dedupeBucket),
+      String(event.eventId || ''),
+    ].join('|');
+
+    const dedupeKey = makeStableId(dedupeSource);
+    const alertRef = firestore.collection(config.alertsCollection).doc(dedupeKey);
+    const existing = await alertRef.get();
+
+    await alertRef.set({
       ...snapshot,
+      dedupe_key: dedupeKey,
       event_id: event.eventId || null,
-      created_at: new Date().toISOString(),
-    });
+      event_kind: alertKind,
+      message: classification.body,
+      severity: classification.severity,
+      created_at: existing.exists
+        ? (existing.data()?.created_at || new Date().toISOString())
+        : new Date().toISOString(),
+      last_seen_at: new Date().toISOString(),
+    }, { merge: true });
+
+    return {
+      alertCreated: !existing.exists,
+      dedupeKey,
+      eventKind: alertKind,
+    };
   }
+
+  return { alertCreated: false, dedupeKey: null, eventKind: null };
 }
 
 module.exports = async function handler(req, res) {
@@ -302,6 +423,7 @@ module.exports = async function handler(req, res) {
     let skippedNoRouting = 0;
     let skippedNoTokens = 0;
     let skippedNonAlert = 0;
+    let skippedDuplicatedAlert = 0;
 
     for (const event of events) {
       if (!event.deviceId && config.defaultDeviceId) {
@@ -310,8 +432,13 @@ module.exports = async function handler(req, res) {
 
       const classification = classifyEvent(event, config);
 
+      let persistenceResult = {
+        alertCreated: false,
+        dedupeKey: null,
+      };
+
       if (event.deviceId) {
-        await persistEvent({
+        persistenceResult = await persistEvent({
           firestore,
           config,
           event,
@@ -327,6 +454,11 @@ module.exports = async function handler(req, res) {
 
       if (!classification.shouldPush) {
         skippedNonAlert += 1;
+        continue;
+      }
+
+      if ((classification.vibrationAlarm || classification.geofenceAlarm) && !persistenceResult.alertCreated) {
+        skippedDuplicatedAlert += 1;
         continue;
       }
 
@@ -350,6 +482,7 @@ module.exports = async function handler(req, res) {
       payload.notification.body = classification.body;
       payload.data.severity = classification.severity;
       payload.data.report_code = String(event.reportCode || '');
+      payload.data.event_kind = String(persistenceResult.eventKind || event.eventType || '');
       const multicastResponse = await messaging.sendEachForMulticast({
         ...payload,
         tokens,
@@ -374,6 +507,7 @@ module.exports = async function handler(req, res) {
       events_persisted: persisted,
       skipped_no_routing: skippedNoRouting,
       skipped_non_alert: skippedNonAlert,
+      skipped_duplicated_alert: skippedDuplicatedAlert,
       skipped_no_tokens: skippedNoTokens,
       sent,
       failed,
@@ -387,6 +521,7 @@ module.exports = async function handler(req, res) {
       events_persisted: persisted,
       skipped_no_routing: skippedNoRouting,
       skipped_non_alert: skippedNonAlert,
+      skipped_duplicated_alert: skippedDuplicatedAlert,
       skipped_no_tokens: skippedNoTokens,
       sent,
       failed,
