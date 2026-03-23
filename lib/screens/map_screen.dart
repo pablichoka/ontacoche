@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -28,6 +30,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   ProviderSubscription<InitialTrackingState>? _initialTrackingSubscription;
   ProviderSubscription<AsyncValue<DevicePosition>>? _positionSubscription;
   ProviderSubscription<AsyncValue<DeviceAlert>>? _alertSubscription;
+  Timer? _geofenceRefreshTimer;
 
   @override
   void initState() {
@@ -67,6 +70,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         });
       },
     );
+
+    _geofenceRefreshTimer?.cancel();
+    _geofenceRefreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!mounted) {
+        return;
+      }
+      ref.invalidate(deviceGeofencesProvider);
+    });
   }
 
   @override
@@ -74,6 +85,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     _initialTrackingSubscription?.close();
     _positionSubscription?.close();
     _alertSubscription?.close();
+    _geofenceRefreshTimer?.cancel();
     _mapController.dispose();
     super.dispose();
   }

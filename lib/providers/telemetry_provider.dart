@@ -182,8 +182,21 @@ Stream<List<DeviceAlert>> _watchFirestoreAlerts(Ref ref) async* {
       ? _defaultAlertsCollection
       : (dotenv.env['ALERTS_COLLECTION'] ?? '').trim();
   final String deviceId = (dotenv.env['DEVICE_ID'] ?? '').trim();
-  final Query<Map<String, dynamic>> query =
-      FirebaseFirestore.instance.collection(collectionName).limit(300);
+  final int? numericDeviceId = int.tryParse(deviceId);
+  final Query<Map<String, dynamic>> query;
+  if (deviceId.isEmpty) {
+    query = FirebaseFirestore.instance.collection(collectionName).limit(300);
+  } else if (numericDeviceId != null) {
+    query = FirebaseFirestore.instance
+        .collection(collectionName)
+        .where('device_id', whereIn: <Object>[deviceId, numericDeviceId])
+        .limit(300);
+  } else {
+    query = FirebaseFirestore.instance
+        .collection(collectionName)
+        .where('device_id', isEqualTo: deviceId)
+        .limit(300);
+  }
 
   String? lastSignature;
   await for (final QuerySnapshot<Map<String, dynamic>> snapshot
@@ -196,12 +209,19 @@ Stream<List<DeviceAlert>> _watchFirestoreAlerts(Ref ref) async* {
         })
         .toList(growable: false);
 
-    final List<Map<String, dynamic>> sourceItems =
-        deviceId.isEmpty
+    final List<Map<String, dynamic>> sourceItems = deviceId.isEmpty
         ? allItems
         : allItems.where((Map<String, dynamic> item) {
-            final String itemDeviceId = (item['device_id'] ?? '').toString();
-            return itemDeviceId == deviceId;
+            final Object? rawId = item['device_id'];
+            if (rawId == null) {
+              return false;
+            }
+
+            if (rawId is num && numericDeviceId != null) {
+              return rawId.toInt() == numericDeviceId;
+            }
+
+            return rawId.toString() == deviceId;
           }).toList(growable: false);
 
     final List<Map<String, dynamic>> effectiveItems =

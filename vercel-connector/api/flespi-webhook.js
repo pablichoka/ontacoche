@@ -53,6 +53,15 @@ function normalizeReportCode(value) {
   return raw;
 }
 
+function extractDeviceIdFromTopic(topic) {
+  if (!topic || typeof topic !== 'string') {
+    return null;
+  }
+
+  const match = topic.match(/\/devices\/([^/]+)/);
+  return match ? match[1] : null;
+}
+
 function asBoolean(value) {
   if (typeof value === 'boolean') {
     return value;
@@ -195,6 +204,7 @@ function normalizeEvent(body) {
       'device.id',
       'device.id',
     ]) ||
+    extractDeviceIdFromTopic(rawTopic) ||
     null;
 
   return {
@@ -216,20 +226,55 @@ function normalizeEvent(body) {
 }
 
 function extractRawEvents(body) {
+  const envelopeContext = (body && typeof body === 'object')
+    ? {
+      topic: body.topic || null,
+      event_type: body.event_type || null,
+      type: body.type || null,
+      device_id: body.device_id || body.deviceId || body.ident || body['device.id'] || null,
+      user_id: body.user_id || body.userId || null,
+      title: body.title || null,
+      body: body.body || body.message || null,
+      severity: body.severity || null,
+      ts: body.ts || body.timestamp || body['server.timestamp'] || null,
+      payload: (body.payload && typeof body.payload === 'object') ? body.payload : null,
+    }
+    : {};
+
+  const mergeWithEnvelope = (item) => {
+    const itemPayload = item && typeof item.payload === 'object' ? item.payload : null;
+    const mergedPayload = {
+      ...(envelopeContext.payload || {}),
+      ...(itemPayload || {}),
+    };
+
+    return {
+      ...envelopeContext,
+      ...item,
+      payload: Object.keys(mergedPayload).length > 0 ? mergedPayload : undefined,
+    };
+  };
+
   if (Array.isArray(body)) {
-    return body.filter((item) => item && typeof item === 'object');
+    return body
+      .filter((item) => item && typeof item === 'object')
+      .map(mergeWithEnvelope);
   }
 
   if (body && Array.isArray(body.data)) {
-    return body.data.filter((item) => item && typeof item === 'object');
+    return body.data
+      .filter((item) => item && typeof item === 'object')
+      .map(mergeWithEnvelope);
   }
 
   if (body && Array.isArray(body.result)) {
-    return body.result.filter((item) => item && typeof item === 'object');
+    return body.result
+      .filter((item) => item && typeof item === 'object')
+      .map(mergeWithEnvelope);
   }
 
   if (body && typeof body === 'object') {
-    return [body];
+    return [mergeWithEnvelope(body)];
   }
 
   return [];
@@ -290,19 +335,24 @@ function classifyEvent(event, config) {
     ? (firstDefined(geofenceRaw, ['name', 'title', 'id']) || null)
     : geofenceRaw;
 
+  const topicActivated = topic.includes('/activated') && !topic.includes('/deactivated');
+  const eventActivated = eventType.includes('activated') && !eventType.includes('deactivated');
+  const topicDeactivated = topic.includes('/deactivated');
+  const eventDeactivated = eventType.includes('deactivated');
+
   const geofenceEnter =
     intervalType === 'enter' ||
     intervalType === 'activated' ||
     eventType.includes('geofence_enter') ||
-    eventType.includes('activated') ||
-    topic.includes('/activated');
+    eventActivated ||
+    topicActivated;
 
   const geofenceExit =
     intervalType === 'exit' ||
     intervalType === 'deactivated' ||
     eventType.includes('geofence_exit') ||
-    eventType.includes('deactivated') ||
-    topic.includes('/deactivated');
+    eventDeactivated ||
+    topicDeactivated;
 
   const geofenceAlarm = geofenceEnter || geofenceExit;
 

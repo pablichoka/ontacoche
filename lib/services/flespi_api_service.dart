@@ -521,21 +521,29 @@ class FlespiApiService {
   }
 
   Future<List<Geofence>> getDeviceGeofences(String selector) async {
-    final Map<String, dynamic> assignmentsResponse = await readPath(
-      '/gw/devices/$selector/geofences/all',
-      queryParameters: const <String, String>{
-        'fields': 'geofence_id,name',
-      },
-    );
+    final bool selectorIsIdent = selector.startsWith('configuration.ident=');
+    List<int> geofenceIds;
 
-    final List<dynamic> assignments =
-        assignmentsResponse['result'] as List<dynamic>? ?? const <dynamic>[];
-    final List<int> geofenceIds = assignments
-        .whereType<Map>()
-        .map((Map item) => item['geofence_id'])
-        .whereType<num>()
-        .map((num id) => id.toInt())
-        .toList(growable: false);
+    try {
+      geofenceIds = await _fetchAssignedGeofenceIds(selector);
+    } on FlespiApiException {
+      if (!selectorIsIdent) {
+        rethrow;
+      }
+
+      final String? fallbackSelector = await _resolveDeviceIdSelector(selector);
+      if (fallbackSelector == null) {
+        return const <Geofence>[];
+      }
+      geofenceIds = await _fetchAssignedGeofenceIds(fallbackSelector);
+    }
+
+    if (geofenceIds.isEmpty && selectorIsIdent) {
+      final String? fallbackSelector = await _resolveDeviceIdSelector(selector);
+      if (fallbackSelector != null && fallbackSelector != selector) {
+        geofenceIds = await _fetchAssignedGeofenceIds(fallbackSelector);
+      }
+    }
 
     if (geofenceIds.isEmpty) {
       return const <Geofence>[];
@@ -553,6 +561,47 @@ class FlespiApiService {
         .whereType<Map>()
         .map((Map item) => Geofence.fromJson(Map<String, dynamic>.from(item)))
         .toList(growable: false);
+  }
+
+  Future<List<int>> _fetchAssignedGeofenceIds(String selector) async {
+    final Map<String, dynamic> assignmentsResponse = await readPath(
+      '/gw/devices/$selector/geofences/all',
+      queryParameters: const <String, String>{
+        'fields': 'geofence_id,name',
+      },
+    );
+
+    final List<dynamic> assignments =
+        assignmentsResponse['result'] as List<dynamic>? ?? const <dynamic>[];
+    return assignments
+        .whereType<Map>()
+        .map((Map item) => item['geofence_id'])
+        .whereType<num>()
+        .map((num id) => id.toInt())
+        .toList(growable: false);
+  }
+
+  Future<String?> _resolveDeviceIdSelector(String selector) async {
+    final Map<String, dynamic> device = await getDevice(
+      selector,
+      fields: const <String>['id'],
+    );
+    final List<dynamic> result =
+        device['result'] as List<dynamic>? ?? const <dynamic>[];
+    if (result.isEmpty || result.first is! Map) {
+      return null;
+    }
+
+    final Map<String, dynamic> first = Map<String, dynamic>.from(
+      result.first as Map,
+    );
+    final Object? id = first['id'];
+    if (id is num) {
+      return id.toInt().toString();
+    }
+
+    final String idString = (id ?? '').toString().trim();
+    return idString.isEmpty ? null : idString;
   }
 
   Future<Map<String, dynamic>> readDeviceEndpoint({

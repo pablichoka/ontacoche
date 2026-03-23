@@ -86,7 +86,12 @@ class DeviceAlert {
     }
 
     if (type == DeviceAlertType.unknown) {
-      return null;
+      final bool hasMeaningfulText = messageText.trim().isNotEmpty ||
+          titleText.trim().isNotEmpty ||
+          eventKind.trim().isNotEmpty;
+      if (!hasMeaningfulText) {
+        return null;
+      }
     }
 
     final DateTime timestamp = _timestampFromBackendJson(json);
