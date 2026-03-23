@@ -8,19 +8,16 @@ import '../models/device_position.dart';
 import '../models/geofence.dart';
 import '../models/tracking_flow.dart';
 import '../providers/api_provider.dart';
-import '../providers/mqtt_provider.dart';
+import '../providers/telemetry_provider.dart';
 import '../providers/tracking_provider.dart';
 import '../widgets/dynamic_island.dart';
 
-
 class MapScreen extends ConsumerStatefulWidget {
-
   const MapScreen({super.key});
 
   @override
   ConsumerState<MapScreen> createState() => _MapScreenState();
 }
-
 
 class _MapScreenState extends ConsumerState<MapScreen> {
   static const LatLng _fallbackCenter = LatLng(0, 0);
@@ -44,7 +41,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         }
 
         final bool shouldMoveMap =
-            _latestPosition == null || _hasAnimatedToPosition || next.source == InitialTrackingSource.remote;
+            _latestPosition == null ||
+            _hasAnimatedToPosition ||
+            next.source == InitialTrackingSource.remote;
         _primePosition(next.position!, moveMap: shouldMoveMap);
       },
     );
@@ -80,7 +79,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 
   void _primePosition(DevicePosition position, {bool moveMap = false}) {
-
     if (!mounted) {
       return;
     }
@@ -91,17 +89,25 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     if (moveMap) {
       final LatLng target = LatLng(position.latitude, position.longitude);
-      _mapController.move(target, _hasAnimatedToPosition ? _mapController.camera.zoom : 16);
+      _mapController.move(
+        target,
+        _hasAnimatedToPosition ? _mapController.camera.zoom : 16,
+      );
       _hasAnimatedToPosition = true;
     }
   }
 
-@override
+  @override
   Widget build(BuildContext context) {
-    final InitialTrackingState initialTrackingState = ref.watch(initialTrackingProvider);
-    final AsyncValue<List<Geofence>> geofencesState = ref.watch(deviceGeofencesProvider);
-    
-    final DevicePosition? displayPosition = _latestPosition ?? initialTrackingState.position;
+    final InitialTrackingState initialTrackingState = ref.watch(
+      initialTrackingProvider,
+    );
+    final AsyncValue<List<Geofence>> geofencesState = ref.watch(
+      deviceGeofencesProvider,
+    );
+
+    final DevicePosition? displayPosition =
+        _latestPosition ?? initialTrackingState.position;
 
     final LatLng initialMapCenter = displayPosition == null
         ? _fallbackCenter
@@ -132,7 +138,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 circles: _buildGeofenceCircles(geofencesState.value!),
               ),
             if (geofencesState.hasValue && geofencesState.value!.isNotEmpty)
-              PolygonLayer(polygons: _buildGeofencePolygons(geofencesState.value!)),
+              PolygonLayer(
+                polygons: _buildGeofencePolygons(geofencesState.value!),
+              ),
             MarkerLayer(markers: _buildMarkers(displayPosition, center)),
           ],
         ),
@@ -162,12 +170,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     }
 
     return <Marker>[
-      Marker(
-        point: center,
-        width: 48,
-        height: 48,
-        child: const _GpsMarker(),
-      ),
+      Marker(point: center, width: 48, height: 48, child: const _GpsMarker()),
     ];
   }
 
@@ -197,12 +200,16 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     return geofences
         .where(
           (Geofence geofence) =>
-              geofence.type == GeofenceType.polygon && geofence.points.isNotEmpty,
+              geofence.type == GeofenceType.polygon &&
+              geofence.points.isNotEmpty,
         )
         .map(
           (Geofence geofence) => Polygon(
             points: geofence.points
-                .map((GeofencePoint point) => LatLng(point.latitude, point.longitude))
+                .map(
+                  (GeofencePoint point) =>
+                      LatLng(point.latitude, point.longitude),
+                )
                 .toList(growable: false),
             color: Colors.blue.withValues(alpha: 0.18),
             borderColor: Colors.blue,
@@ -247,4 +254,3 @@ class _GpsMarker extends StatelessWidget {
     );
   }
 }
-

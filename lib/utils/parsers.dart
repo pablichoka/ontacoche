@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 abstract final class Parsers {
   static DateTime fromUnixSeconds(num value) {
     return DateTime.fromMillisecondsSinceEpoch(
@@ -7,7 +9,18 @@ abstract final class Parsers {
   }
 
   static DateTime? fromUnknown(Object? value) {
+    if (value is Timestamp) {
+      return value.toDate().toLocal();
+    }
+
     if (value is num) {
+      // firestored numeric timestamps may come as unix seconds or milliseconds
+      if (value.abs() >= 100000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(
+          value.toInt(),
+          isUtc: true,
+        ).toLocal();
+      }
       return fromUnixSeconds(value);
     }
 

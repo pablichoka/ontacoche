@@ -52,11 +52,15 @@ class CustomBottomNavbar extends StatelessWidget {
                 final Widget icon = Icon(
                   isSelected ? item.selectedIcon : item.icon,
                   size: 28,
-                  color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF475569),
+                  color: isSelected
+                      ? const Color(0xFF0F172A)
+                      : const Color(0xFF475569),
                 );
 
                 return Padding(
-                  padding: EdgeInsets.only(right: index == items.length - 1 ? 0 : 8),
+                  padding: EdgeInsets.only(
+                    right: index == items.length - 1 ? 0 : 8,
+                  ),
                   child: _NavbarButton(
                     isSelected: isSelected,
                     onTap: () => onDestinationSelected(index),
@@ -97,23 +101,15 @@ class _NavbarButton extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         customBorder: const CircleBorder(),
-        child: SizedBox(
-          width: 52,
-          height: 52,
-          child: Center(child: child),
-        ),
+        child: SizedBox(width: 52, height: 52, child: Center(child: child)),
       ),
     );
   }
 }
 
 class _NavItemData {
-  const _NavItemData({
-    required this.icon,
-    required this.selectedIcon,
-  });
+  const _NavItemData({required this.icon, required this.selectedIcon});
 
   final IconData icon;
   final IconData selectedIcon;
 }
-

@@ -94,15 +94,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nombre actualizado correctamente')),
+          const SnackBar(
+            behavior: SnackBarBehavior.fixed,
+            content: Text('Nombre actualizado correctamente'),
+          ),
         );
         ref.invalidate(deviceDetailsProvider);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error al actualizar: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.fixed,
+            content: Text('Error al actualizar: $e'),
+          ),
+        );
       }
     } finally {
       if (mounted) {

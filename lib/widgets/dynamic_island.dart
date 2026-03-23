@@ -5,11 +5,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/tracking_flow.dart';
 import '../providers/api_provider.dart';
-import '../providers/mqtt_provider.dart';
 import '../providers/telemetry_provider.dart';
 import '../providers/tracking_provider.dart';
 import '../utils/parsers.dart';
-
 
 class DynamicIsland extends ConsumerStatefulWidget {
   const DynamicIsland({super.key});
@@ -60,11 +58,7 @@ class _DynamicIslandState extends ConsumerState<DynamicIsland>
     final double maxWidth = screenWidth - 32;
     const double compactWidth = 220;
 
-    final initialIndicator = ref.watch(initialTrackingIndicatorProvider);
-    final realtimeIndicator = ref.watch(realtimeTrackingIndicatorProvider);
-
     return AnimatedBuilder(
-
       animation: _animation,
       builder: (context, child) {
         final double factor = _animation.value;
@@ -88,10 +82,7 @@ class _DynamicIslandState extends ConsumerState<DynamicIsland>
                   gradient: const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF101010),
-                      Color(0xFF050505),
-                    ],
+                    colors: [Color(0xFF101010), Color(0xFF050505)],
                   ),
                   border: Border.all(
                     color: Colors.white.withValues(alpha: 0.12),
@@ -119,9 +110,7 @@ class _DynamicIslandState extends ConsumerState<DynamicIsland>
                               child: _StatusCard(),
                             ),
                           )
-                        : const Center(
-                            child: _StatusCard(isCompact: true),
-                          ),
+                        : const Center(child: _StatusCard(isCompact: true)),
                   ),
                 ),
               ),
@@ -129,18 +118,7 @@ class _DynamicIslandState extends ConsumerState<DynamicIsland>
           ),
         );
 
-        if (_isExpanded) return islandBody;
-
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _TrackingIndicator(indicator: initialIndicator),
-            const SizedBox(width: 8),
-            islandBody,
-            const SizedBox(width: 8),
-            _TrackingIndicator(indicator: realtimeIndicator),
-          ],
-        );
+        return islandBody;
       },
     );
   }
@@ -168,14 +146,17 @@ class _StatusCard extends ConsumerWidget {
     final position = positionState.valueOrNull ?? initialTrackingState.position;
 
     if (isCompact) {
-      final String batteryText =
-          position?.batteryLevel != null ? '${position!.batteryLevel!.toStringAsFixed(0)}%' : '--%';
+      final String batteryText = position?.batteryLevel != null
+          ? '${position!.batteryLevel!.toStringAsFixed(0)}%'
+          : '--%';
 
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            initialTrackingState.hasPosition ? Icons.gps_fixed_rounded : Icons.travel_explore_rounded,
+            initialTrackingState.hasPosition
+                ? Icons.gps_fixed_rounded
+                : Icons.travel_explore_rounded,
             color: Colors.white,
             size: 16,
           ),
@@ -197,7 +178,9 @@ class _StatusCard extends ConsumerWidget {
           const SizedBox(width: 12),
           Icon(
             _getBatteryIcon(position?.batteryLevel),
-            color: (position?.batteryLevel ?? 100) < 20 ? Colors.redAccent : Colors.white,
+            color: (position?.batteryLevel ?? 100) < 20
+                ? Colors.redAccent
+                : Colors.white,
             size: 14,
           ),
           const SizedBox(width: 4),
@@ -217,9 +200,13 @@ class _StatusCard extends ConsumerWidget {
     final statusText = switch (realtimeStatus) {
       TrackingServiceStatus.ok => 'Información en vivo',
       TrackingServiceStatus.connecting =>
-        initialTrackingState.hasPosition ? 'Sincronizando en segundo plano' : 'Buscando la primera posición',
+        initialTrackingState.hasPosition
+            ? 'Sincronizando en segundo plano'
+            : 'Buscando la primera posición',
       TrackingServiceStatus.failure =>
-        initialTrackingState.hasPosition ? 'Mostrando la última posición disponible' : 'Sin conexión con el tracker',
+        initialTrackingState.hasPosition
+            ? 'Mostrando la última posición disponible'
+            : 'Sin conexión con el tracker',
     };
 
     final String coordinatesText = position == null
@@ -229,13 +216,17 @@ class _StatusCard extends ConsumerWidget {
     final String detailText = positionState.maybeWhen(
       data: (current) {
         final bool isMoving = (current.speed ?? 0) > 2;
-        final String speed = current.speed == null ? 'velocidad desconocida' : '${current.speed!.toStringAsFixed(1)} km/h';
+        final String speed = current.speed == null
+            ? 'velocidad desconocida'
+            : '${current.speed!.toStringAsFixed(1)} km/h';
         return '${isMoving ? 'En movimiento' : 'Estacionado'} · $speed';
       },
       orElse: () {
         if (position != null) {
           final bool isMoving = (position.speed ?? 0) > 2;
-          final String speed = position.speed == null ? 'velocidad desconocida' : '${position.speed!.toStringAsFixed(1)} km/h';
+          final String speed = position.speed == null
+              ? 'velocidad desconocida'
+              : '${position.speed!.toStringAsFixed(1)} km/h';
           return '${isMoving ? 'En movimiento' : 'Estacionado'} · $speed';
         }
         return 'Sin posición recibida todavía';
@@ -248,16 +239,18 @@ class _StatusCard extends ConsumerWidget {
     );
 
     String lastPositionText = 'Sin posiciones registradas';
-    final DateTime? lastTime = positionState.valueOrNull?.timestamp ?? position?.timestamp ?? latestStoredRecord?.recordedAt;
+    final DateTime? lastTime =
+        positionState.valueOrNull?.timestamp ??
+        position?.timestamp ??
+        latestStoredRecord?.recordedAt;
     if (lastTime != null) {
       lastPositionText = Parsers.formatRelativeTimestamp(lastTime);
     }
 
-
     final String sourceText = switch (initialTrackingState.source) {
       InitialTrackingSource.fallback => 'Sin datos persistidos',
       InitialTrackingSource.persisted => 'Cargado desde la app',
-      InitialTrackingSource.remote => 'Actualizado desde flespi',
+      InitialTrackingSource.remote => 'Actualizado desde backend',
     };
     final String storedCountText = telemetryCountState.maybeWhen(
       data: (count) => '$count posiciones guardadas',
@@ -300,7 +293,9 @@ class _StatusCard extends ConsumerWidget {
                   Icon(
                     _getBatteryIcon(position?.batteryLevel),
                     size: 20,
-                    color: (position?.batteryLevel ?? 100) < 20 ? Colors.redAccent : Colors.white,
+                    color: (position?.batteryLevel ?? 100) < 20
+                        ? Colors.redAccent
+                        : Colors.white,
                   ),
                   const SizedBox(width: 4),
                   Text(
@@ -323,21 +318,31 @@ class _StatusCard extends ConsumerWidget {
             value: coordinatesText,
             onTap: position != null
                 ? () {
-                    final RenderBox? button = context.findRenderObject() as RenderBox?;
+                    final RenderBox? button =
+                        context.findRenderObject() as RenderBox?;
                     final Offset? offset = button?.localToGlobal(Offset.zero);
 
                     showMenu(
                       context: context,
                       position: RelativeRect.fromLTRB(
-                          offset?.dx ?? 100, (offset?.dy ?? 300) + 100, (offset?.dx ?? 100) + 200, 0),
+                        offset?.dx ?? 100,
+                        (offset?.dy ?? 300) + 100,
+                        (offset?.dx ?? 100) + 200,
+                        0,
+                      ),
                       items: [
                         PopupMenuItem(
                           onTap: () {
-                            Clipboard.setData(ClipboardData(
-                              text: '${position.latitude}, ${position.longitude}',
-                            ));
+                            Clipboard.setData(
+                              ClipboardData(
+                                text:
+                                    '${position.latitude}, ${position.longitude}',
+                              ),
+                            );
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Coordenadas copiadas')),
+                              const SnackBar(
+                                content: Text('Coordenadas copiadas'),
+                              ),
                             );
                           },
                           child: const ListTile(
@@ -347,7 +352,8 @@ class _StatusCard extends ConsumerWidget {
                         ),
                         PopupMenuItem(
                           onTap: () async {
-                            final url = 'google.navigation:q=${position.latitude},${position.longitude}';
+                            final url =
+                                'google.navigation:q=${position.latitude},${position.longitude}';
                             final fallbackUrl =
                                 'https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}';
 
@@ -355,10 +361,16 @@ class _StatusCard extends ConsumerWidget {
                               if (await canLaunchUrl(Uri.parse(url))) {
                                 await launchUrl(Uri.parse(url));
                               } else {
-                                await launchUrl(Uri.parse(fallbackUrl), mode: LaunchMode.externalApplication);
+                                await launchUrl(
+                                  Uri.parse(fallbackUrl),
+                                  mode: LaunchMode.externalApplication,
+                                );
                               }
                             } catch (e) {
-                              await launchUrl(Uri.parse(fallbackUrl), mode: LaunchMode.externalApplication);
+                              await launchUrl(
+                                Uri.parse(fallbackUrl),
+                                mode: LaunchMode.externalApplication,
+                              );
                             }
                           },
                           child: const ListTile(
@@ -458,7 +470,11 @@ class _InfoRow extends StatelessWidget {
                       ),
                       if (onTap != null) ...[
                         const SizedBox(width: 4),
-                        const Icon(Icons.arrow_drop_down_rounded, size: 16, color: Colors.white60),
+                        const Icon(
+                          Icons.arrow_drop_down_rounded,
+                          size: 16,
+                          color: Colors.white60,
+                        ),
                       ],
                     ],
                   ),
@@ -474,55 +490,6 @@ class _InfoRow extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TrackingIndicator extends StatefulWidget {
-  const _TrackingIndicator({required this.indicator});
-
-  final TrackingIndicatorData indicator;
-
-  @override
-  State<_TrackingIndicator> createState() => _TrackingIndicatorState();
-}
-
-class _TrackingIndicatorState extends State<_TrackingIndicator> {
-  final GlobalKey<TooltipState> _tooltipKey = GlobalKey<TooltipState>();
-
-  void _showTooltip() {
-    try {
-      _tooltipKey.currentState?.ensureTooltipVisible();
-    } catch (_) {}
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final TrackingIndicatorData indicator = widget.indicator;
-    return Tooltip(
-      verticalOffset: 36,
-      key: _tooltipKey,
-      triggerMode: TooltipTriggerMode.tap,
-      message: indicator.tooltip,
-      child: Material(
-        color: Colors.black,
-        shape: const CircleBorder(),
-        child: InkWell(
-          onTap: _showTooltip,
-          customBorder: const CircleBorder(),
-          child: SizedBox(
-            width: 56,
-            height: 56,
-            child: Center(
-              child: Icon(
-                indicator.icon,
-                color: indicator.iconColor,
-                size: 28,
-              ),
-            ),
-          ),
         ),
       ),
     );

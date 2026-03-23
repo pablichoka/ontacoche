@@ -14,6 +14,10 @@
         "Accept": "application/json",
         "X-Goog-Api-Key": "AQ.Ab8RN6LbLrDAipdWneLPI5KBZIRSAFPIwFeLsSBWAqhfSc_BdA"
       }
+    },
+    "firebase": {
+      "command": "npx",
+      "args": ["-y", "firebase-tools@latest", "mcp"]
     }
   }
 }

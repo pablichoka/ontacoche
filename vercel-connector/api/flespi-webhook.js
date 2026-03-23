@@ -8,10 +8,32 @@ const {
 const VIBRATION_DEDUPE_WINDOW_SECONDS = 45;
 const GEOFENCE_DEDUPE_WINDOW_SECONDS = 30;
 
+function getNestedValue(source, key) {
+  if (!source || typeof source !== 'object' || !key) {
+    return null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(source, key) && source[key] != null) {
+    return source[key];
+  }
+
+  const parts = key.split('.');
+  let current = source;
+  for (const part of parts) {
+    if (!current || typeof current !== 'object' || !Object.prototype.hasOwnProperty.call(current, part)) {
+      return null;
+    }
+    current = current[part];
+  }
+
+  return current == null ? null : current;
+}
+
 function firstDefined(source, keys) {
   for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(source, key) && source[key] != null) {
-      return source[key];
+    const value = getNestedValue(source, key);
+    if (value != null) {
+      return value;
     }
   }
 
@@ -136,32 +158,60 @@ function validateRequest(req, config) {
 }
 
 function normalizeEvent(body) {
+  const payload = (body && typeof body.payload === 'object' && body.payload)
+    ? body.payload
+    : {};
+  const root = (body && typeof body === 'object') ? body : {};
+
   const reportCode = normalizeReportCode(firstDefined(body, [
     'report.code',
     'report_code',
     'reportCode',
     'message.code',
     'code',
+    'payload.report.code',
+    'payload.report_code',
   ]));
 
+  const rawTopic = firstDefined(root, ['topic', 'event.topic', 'payload.topic']);
+  const inferredEventType =
+    firstDefined(root, ['event_type', 'type', 'event.type']) ||
+    firstDefined(payload, ['event_type', 'type', 'interval.type']) ||
+    rawTopic ||
+    'flespi_event';
+
+  const deviceId =
+    firstDefined(root, [
+      'device_id',
+      'deviceId',
+      'ident',
+      'device.id',
+      'device.id',
+    ]) ||
+    firstDefined(payload, [
+      'device_id',
+      'deviceId',
+      'ident',
+      'device.id',
+      'device.id',
+    ]) ||
+    null;
+
   return {
-    eventId: body.event_id || body.id || null,
-    deviceId:
-      body.device_id ||
-      body.deviceId ||
-      body.ident ||
-      body['device.id'] ||
-      body.device?.id ||
-      body.device ||
-      null,
-    userId: body.user_id || body.userId || null,
-    eventType: body.event_type || body.type || 'flespi_event',
+    eventId: firstDefined(root, ['event_id', 'id', 'event.id']) || firstDefined(payload, ['event_id', 'id']) || null,
+    deviceId: deviceId != null ? String(deviceId) : null,
+    userId: (firstDefined(root, ['user_id', 'userId']) || firstDefined(payload, ['user_id', 'userId']) || null),
+    eventType: String(inferredEventType),
     reportCode,
-    title: body.title || 'Alerta OntaCoche',
-    body: body.body || body.message || 'Se detecto una alerta en el tracker',
-    severity: body.severity || 'info',
-    ts: body.ts || Date.now(),
-    raw: body,
+    title: firstDefined(root, ['title', 'notification.title']) || firstDefined(payload, ['title']) || 'Alerta OntaCoche',
+    body: firstDefined(root, ['body', 'message', 'notification.body']) || firstDefined(payload, ['body', 'message']) || 'Se detecto una alerta en el tracker',
+    severity: firstDefined(root, ['severity']) || firstDefined(payload, ['severity']) || 'info',
+    ts: firstDefined(root, ['ts', 'timestamp', 'server.timestamp']) || firstDefined(payload, ['ts', 'timestamp', 'server.timestamp']) || Date.now(),
+    raw: {
+      ...payload,
+      ...root,
+      payload,
+    },
   };
 }
 
@@ -172,6 +222,10 @@ function extractRawEvents(body) {
 
   if (body && Array.isArray(body.data)) {
     return body.data.filter((item) => item && typeof item === 'object');
+  }
+
+  if (body && Array.isArray(body.result)) {
+    return body.result.filter((item) => item && typeof item === 'object');
   }
 
   if (body && typeof body === 'object') {
@@ -224,25 +278,31 @@ function classifyEvent(event, config) {
     (typeof alarmValue === 'string' && alarmValue.toLowerCase().includes('vibration'));
 
   const eventType = String(event.eventType || '').toLowerCase();
+  const topic = String(firstDefined(raw, ['topic', 'event.topic']) || '').toLowerCase();
   const intervalType = String(firstDefined(raw, ['type', 'interval.type', 'geofence.event']) || '').toLowerCase();
-  const geofenceName = firstDefined(raw, [
+  const geofenceRaw = firstDefined(raw, [
     'geofence',
     'geofence.name',
     'plugin.geofence.name',
     'name',
   ]);
+  const geofenceName = geofenceRaw && typeof geofenceRaw === 'object'
+    ? (firstDefined(geofenceRaw, ['name', 'title', 'id']) || null)
+    : geofenceRaw;
 
   const geofenceEnter =
     intervalType === 'enter' ||
     intervalType === 'activated' ||
     eventType.includes('geofence_enter') ||
-    eventType.includes('activated');
+    eventType.includes('activated') ||
+    topic.includes('/activated');
 
   const geofenceExit =
     intervalType === 'exit' ||
     intervalType === 'deactivated' ||
     eventType.includes('geofence_exit') ||
-    eventType.includes('deactivated');
+    eventType.includes('deactivated') ||
+    topic.includes('/deactivated');
 
   const geofenceAlarm = geofenceEnter || geofenceExit;
 

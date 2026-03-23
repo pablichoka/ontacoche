@@ -20,42 +20,81 @@ class DeviceAlert {
   final bool? isEntering;
 
   static DeviceAlert? fromBackendJson(Map<String, dynamic> json) {
-    final String eventKind = (json['event_kind'] ?? '').toString();
+    final Map<String, dynamic> payload = json['payload'] is Map
+      ? Map<String, dynamic>.from(json['payload'] as Map)
+      : const <String, dynamic>{};
+
+    final String eventKind =
+      (json['event_kind'] ??
+          json['event_type'] ??
+          payload['event_kind'] ??
+          payload['event_type'] ??
+          '')
+        .toString()
+        .toLowerCase();
+    final String messageText = (
+      json['message'] ?? json['body'] ?? payload['message'] ?? payload['body'] ?? ''
+    ).toString().toLowerCase();
+    final String titleText = (
+      json['title'] ?? payload['title'] ?? ''
+    ).toString().toLowerCase();
+    final dynamic geofenceRaw =
+      json['geofence_name'] ?? json['geofence'] ?? payload['geofence_name'] ?? payload['geofence'];
+    final bool explicitGeofence = geofenceRaw != null;
+    final bool vibrationAlarm =
+      json['vibration_alarm'] == true ||
+      payload['vibration_alarm'] == true ||
+      payload['vibration.alarm'] == true;
+    final bool geofenceAlarm =
+      json['geofence_alarm'] == true || payload['geofence_alarm'] == true;
 
     DeviceAlertType type = DeviceAlertType.unknown;
     bool? isEntering;
 
-    if (eventKind == 'vibration_alert') {
+    if (eventKind == 'vibration_alert' ||
+        eventKind == 'vibration' ||
+        eventKind.contains('vibration')) {
       type = DeviceAlertType.vibration;
-    } else if (eventKind == 'geofence_enter') {
+    } else if (eventKind == 'geofence_enter' || eventKind == 'enter' || eventKind.contains('activated')) {
       type = DeviceAlertType.geofence;
       isEntering = true;
-    } else if (eventKind == 'geofence_exit') {
+    } else if (eventKind == 'geofence_exit' || eventKind == 'exit' || eventKind.contains('deactivated')) {
       type = DeviceAlertType.geofence;
       isEntering = false;
-    } else if ((json['vibration_alarm'] == true)) {
+    } else if (vibrationAlarm) {
       type = DeviceAlertType.vibration;
-    } else if ((json['geofence_alarm'] == true)) {
+    } else if (geofenceAlarm) {
       type = DeviceAlertType.geofence;
-      isEntering = json['geofence_enter'] == true
+      isEntering = (json['geofence_enter'] == true || payload['geofence_enter'] == true)
           ? true
-          : (json['geofence_exit'] == true ? false : null);
+          : ((json['geofence_exit'] == true || payload['geofence_exit'] == true)
+                ? false
+                : null);
+    } else if (json['alarm'] == true) {
+      type = DeviceAlertType.vibration;
+    } else if (explicitGeofence ||
+        messageText.contains('geocerca') ||
+        titleText.contains('geocerca')) {
+      type = DeviceAlertType.geofence;
+      if (messageText.contains('entrada')) {
+        isEntering = true;
+      } else if (messageText.contains('salida')) {
+        isEntering = false;
+      }
+    } else if (messageText.contains('vibr') || titleText.contains('vibr')) {
+      type = DeviceAlertType.vibration;
     }
 
     if (type == DeviceAlertType.unknown) {
       return null;
     }
 
-    final DateTime timestamp =
-        Parsers.fromUnknown(json['source_ts']) ??
-        Parsers.fromUnknown(json['updated_at']) ??
-        Parsers.fromUnknown(json['created_at']) ??
-        Parsers.now();
+    final DateTime timestamp = _timestampFromBackendJson(json);
 
-    final String? geofenceName = json['geofence_name']?.toString();
+    final String? geofenceName = geofenceRaw?.toString();
     final String message =
-        (json['message']?.toString().trim().isNotEmpty ?? false)
-        ? json['message'].toString()
+      ((json['message'] ?? json['body'])?.toString().trim().isNotEmpty ?? false)
+      ? (json['message'] ?? json['body']).toString()
         : switch (type) {
             DeviceAlertType.vibration => '¡Vibración detectada!',
             DeviceAlertType.geofence =>
@@ -75,6 +114,25 @@ class DeviceAlert {
       geofenceName: geofenceName,
       isEntering: isEntering,
     );
+  }
+
+  static DateTime _timestampFromBackendJson(Map<String, dynamic> json) {
+    final DateTime? sourceTs = Parsers.fromUnknown(json['source_ts']);
+    if (sourceTs != null) {
+      return sourceTs;
+    }
+
+    final Object? sourceTsMs = json['source_ts_ms'];
+    if (sourceTsMs is num) {
+      return DateTime.fromMillisecondsSinceEpoch(
+        sourceTsMs.toInt(),
+        isUtc: true,
+      ).toLocal();
+    }
+
+    return Parsers.fromUnknown(json['updated_at']) ??
+        Parsers.fromUnknown(json['created_at']) ??
+        Parsers.now();
   }
 
   static List<DeviceAlert> fromDeviceMessage(Map<String, dynamic> json) {

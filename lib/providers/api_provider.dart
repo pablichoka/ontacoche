@@ -80,12 +80,44 @@ final initialDevicePositionProvider = FutureProvider<DevicePosition?>((
 });
 
 final deviceGeofencesProvider = FutureProvider<List<Geofence>>((Ref ref) async {
-  return const <Geofence>[];
+  final FlespiApiService service = ref.watch(flespiApiServiceProvider);
+  final String selector = ref.watch(deviceSelectorProvider);
+
+  try {
+    return await service.getDeviceGeofences(selector);
+  } catch (_) {
+    return const <Geofence>[];
+  }
 });
 
 final deviceDetailsProvider = FutureProvider<Map<String, dynamic>>((
   Ref ref,
 ) async {
+  final FlespiApiService service = ref.watch(flespiApiServiceProvider);
+  final String selector = ref.watch(deviceSelectorProvider);
+
+  try {
+    final Map<String, dynamic> response = await service.getDevice(
+      selector,
+      fields: const <String>[
+        'id',
+        'name',
+        'connected',
+        'last_active',
+        'protocol_name',
+        'device_type_name',
+      ],
+    );
+
+    final List<dynamic> result =
+        response['result'] as List<dynamic>? ?? const <dynamic>[];
+    if (result.isNotEmpty && result.first is Map) {
+      return Map<String, dynamic>.from(result.first as Map);
+    }
+  } catch (_) {
+    // fallback to vercel connector shape when flespi is unavailable
+  }
+
   final String deviceId = (dotenv.env['DEVICE_ID'] ?? '').trim();
   if (deviceId.isEmpty) {
     throw Exception('DEVICE_ID is required in .env');

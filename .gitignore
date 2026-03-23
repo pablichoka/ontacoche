@@ -127,3 +127,5 @@ node_modules/
 .vercel
 
 google-services.json
+
+/.vscode
