@@ -125,3 +125,5 @@ app.*.symbols
 node_modules/
 .env
 .vercel
+
+**/google-services.json
