@@ -126,4 +126,4 @@ node_modules/
 .env
 .vercel
 
-**/google-services.json
+google-services.json
