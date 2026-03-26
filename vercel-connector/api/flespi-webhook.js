@@ -325,6 +325,7 @@ function classifyEvent(event, config) {
   const eventType = String(event.eventType || '').toLowerCase();
   const topic = String(firstDefined(raw, ['topic', 'event.topic']) || '').toLowerCase();
   const intervalType = String(firstDefined(raw, ['type', 'interval.type', 'geofence.event']) || '').toLowerCase();
+  const messageText = String(firstDefined(raw, ['message', 'body']) || event.body || '').toLowerCase();
   const geofenceRaw = firstDefined(raw, [
     'geofence',
     'geofence.name',
@@ -339,11 +340,24 @@ function classifyEvent(event, config) {
   const eventActivated = eventType.includes('activated') && !eventType.includes('deactivated');
   const topicDeactivated = topic.includes('/deactivated');
   const eventDeactivated = eventType.includes('deactivated');
+  const geofenceStatusValue = firstDefined(raw, ['plugin.geofence.status', 'geofence.status']);
+  const geofenceAlarmFlag = asBoolean(firstDefined(raw, [
+    'geofence_alarm',
+    'geofence.alarm',
+    'plugin.geofence.alarm',
+  ]));
+  const geofenceSignal =
+    geofenceRaw != null ||
+    geofenceStatusValue != null ||
+    topic.includes('geofence') ||
+    eventType.includes('geofence') ||
+    intervalType.includes('geofence');
 
   const geofenceEnter =
     intervalType === 'enter' ||
     intervalType === 'activated' ||
     eventType.includes('geofence_enter') ||
+    (geofenceSignal && (messageText.includes('entrada') || messageText.includes(' enter'))) ||
     eventActivated ||
     topicActivated;
 
@@ -351,10 +365,11 @@ function classifyEvent(event, config) {
     intervalType === 'exit' ||
     intervalType === 'deactivated' ||
     eventType.includes('geofence_exit') ||
+    (geofenceSignal && (messageText.includes('salida') || messageText.includes(' exit'))) ||
     eventDeactivated ||
     topicDeactivated;
 
-  const geofenceAlarm = geofenceEnter || geofenceExit;
+  const geofenceAlarm = geofenceAlarmFlag || geofenceEnter || geofenceExit;
 
   const communicationActive = event.reportCode === '0200';
   const shouldPush =
@@ -506,7 +521,9 @@ async function persistEvent({ firestore, config, event, classification }) {
 
     const alertKind = effectiveClassification.vibrationAlarm
       ? 'vibration_alert'
-      : (effectiveClassification.geofenceEnter ? 'geofence_enter' : 'geofence_exit');
+      : (effectiveClassification.geofenceEnter
+        ? 'geofence_enter'
+        : (effectiveClassification.geofenceExit ? 'geofence_exit' : 'geofence_alert'));
 
     const dedupeSource = [
       String(event.deviceId),
@@ -526,7 +543,7 @@ async function persistEvent({ firestore, config, event, classification }) {
       event_kind: alertKind,
       message: effectiveClassification.body,
       severity: effectiveClassification.severity,
-      checked: existing.exists ? Boolean(existing.data()?.checked) : false,
+      checked: existing.exists ? Boolean(existing.data()?.checked) : true,
       checked_at: existing.exists ? (existing.data()?.checked_at || null) : null,
       created_at: existing.exists
         ? (existing.data()?.created_at || new Date().toISOString())

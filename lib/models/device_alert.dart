@@ -11,7 +11,7 @@ class DeviceAlert {
     this.value,
     this.geofenceName,
     this.isEntering,
-    this.checked = true,
+    this.checked = false,
     this.dedupeKey,
   });
 
@@ -196,7 +196,7 @@ class DeviceAlert {
           message: '¡Vibración detectada!',
           timestamp: ts,
           value: true,
-          checked: false,
+          checked: true,
         ),
       );
     }
@@ -208,7 +208,7 @@ class DeviceAlert {
           message: 'Batería baja detectada',
           timestamp: ts,
           value: true,
-          checked: false,
+          checked: true,
         ),
       );
     }
@@ -220,7 +220,7 @@ class DeviceAlert {
           message: 'Movimiento no autorizado detectado',
           timestamp: ts,
           value: true,
-          checked: false,
+          checked: true,
         ),
       );
     }
@@ -251,7 +251,7 @@ class DeviceAlert {
       value: type,
       geofenceName: geofenceName.isEmpty ? null : geofenceName,
       isEntering: isEntering,
-      checked: false,
+      checked: true,
     );
   }
 

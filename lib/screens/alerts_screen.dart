@@ -15,7 +15,7 @@ class AlertsScreen extends ConsumerWidget {
     ) {
       final bool hasUnchecked = next.maybeWhen(
         data: (List<DeviceAlert> alerts) =>
-            alerts.any((DeviceAlert alert) => !alert.checked),
+            alerts.any((DeviceAlert alert) => alert.checked),
         orElse: () => false,
       );
 

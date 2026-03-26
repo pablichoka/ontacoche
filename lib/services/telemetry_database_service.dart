@@ -222,7 +222,7 @@ class TelemetryDatabaseService {
       value: map['value'],
       geofenceName: geofenceName,
       isEntering: isEntering,
-      checked: seen == 1,
+      checked: seen == 0,
     );
   }
 
