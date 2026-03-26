@@ -74,12 +74,11 @@ async function fetchLastInterval(config, deviceId) {
 }
 
 function authOk(req, config) {
-  if (!config.pollGeofenceBearer) {
+  if (req.headers['x-vercel-cron'] === '1') {
     return true;
   }
 
-  const authHeader = req.headers.authorization || '';
-  return authHeader === `Bearer ${config.pollGeofenceBearer}`;
+  return false;
 }
 
 module.exports = async function handler(req, res) {

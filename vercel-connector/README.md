@@ -30,8 +30,7 @@ Token registration endpoint:
 Geofence poll endpoint (calculator fallback):
 
 - `POST /api/poll-geofence`
-- no auth required by default (recommended only for cron/internal use)
-- optional auth: set `POLL_GEOFENCE_BEARER` and then send `Authorization: Bearer <POLL_GEOFENCE_BEARER>`
+- Vercel Cron is accepted via `x-vercel-cron: 1`
 - requires env vars `FLESPI_TOKEN` and `GEOFENCE_CALC_ID`
 - behavior: reads last calculator interval per assigned device and creates minimal geofence alerts in Firestore (`device_alerts`) when interval id changes.
 
@@ -52,7 +51,6 @@ Geofence poll endpoint (calculator fallback):
 - `ALERTS_COLLECTION`: alert records collection. default: `device_alerts`
 - `FLESPI_TOKEN`: optional token used by the webhook to fetch latest calculator interval directly from Flespi.
 - `GEOFENCE_CALC_ID`: optional calculator id used with `FLESPI_TOKEN` to infer enter/exit geofence alerts when stream payload lacks explicit geofence event fields.
-- `POLL_GEOFENCE_BEARER`: optional bearer to protect `POST /api/poll-geofence`. If omitted, poll endpoint is open.
 - `STORE_STATE_HISTORY`: enable or disable storing 0200 history snapshots. default: `true`
 - `PUSH_ON_COMMUNICATION_ACTIVE`: send push for plain 0200 communication events. default: `false`
 - `LOG_LEVEL`: not enforced yet, default: `info`
@@ -129,11 +127,11 @@ curl -X POST "https://<project>.vercel.app/api/poll-geofence" \
   -d '{}'
 ```
 
-With optional bearer enabled:
+Cron-only example:
 
 ```bash
 curl -X POST "https://<project>.vercel.app/api/poll-geofence" \
-  -H "Authorization: Bearer <POLL_GEOFENCE_BEARER>" \
+  -H "x-vercel-cron: 1" \
   -H "Content-Type: application/json" \
   -d '{}'
 ```
