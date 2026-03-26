@@ -343,6 +343,8 @@ function classifyEvent(event, config) {
     'plugin.geofence.name',
     'name',
   ]);
+  const explicitEnterGeofence = firstDefined(raw, ['enter_geofence', 'payload.enter_geofence']);
+  const explicitExitGeofence = firstDefined(raw, ['exit_geofence', 'payload.exit_geofence']);
   const geofenceName = geofenceRaw && typeof geofenceRaw === 'object'
     ? (firstDefined(geofenceRaw, ['name', 'title', 'id']) || null)
     : geofenceRaw;
@@ -375,8 +377,12 @@ function classifyEvent(event, config) {
   const hasExplicitIntervalDirection =
     intervalType === 'enter' || intervalType === 'exit';
 
+  const geofenceEnterByField = explicitEnterGeofence != null && explicitEnterGeofence !== 'null';
+  const geofenceExitByField = explicitExitGeofence != null && explicitExitGeofence !== 'null';
+
   const geofenceEnter =
-    intervalType === 'enter' ||
+    geofenceEnterByField ||
+    (!geofenceExitByField && intervalType === 'enter') ||
     (!hasExplicitIntervalDirection && (
       intervalType === 'activated' ||
       eventType.includes('geofence_enter') ||
@@ -386,7 +392,8 @@ function classifyEvent(event, config) {
     ));
 
   const geofenceExit =
-    intervalType === 'exit' ||
+    geofenceExitByField ||
+    (!geofenceEnterByField && intervalType === 'exit') ||
     (!hasExplicitIntervalDirection && (
       intervalType === 'deactivated' ||
       eventType.includes('geofence_exit') ||
