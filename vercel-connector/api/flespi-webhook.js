@@ -353,21 +353,28 @@ function classifyEvent(event, config) {
     eventType.includes('geofence') ||
     intervalType.includes('geofence');
 
+  const hasExplicitIntervalDirection =
+    intervalType === 'enter' || intervalType === 'exit';
+
   const geofenceEnter =
     intervalType === 'enter' ||
-    intervalType === 'activated' ||
-    eventType.includes('geofence_enter') ||
-    (geofenceSignal && (messageText.includes('entrada') || messageText.includes(' enter'))) ||
-    eventActivated ||
-    topicActivated;
+    (!hasExplicitIntervalDirection && (
+      intervalType === 'activated' ||
+      eventType.includes('geofence_enter') ||
+      (geofenceSignal && (messageText.includes('entrada') || messageText.includes(' enter'))) ||
+      eventActivated ||
+      topicActivated
+    ));
 
   const geofenceExit =
     intervalType === 'exit' ||
-    intervalType === 'deactivated' ||
-    eventType.includes('geofence_exit') ||
-    (geofenceSignal && (messageText.includes('salida') || messageText.includes(' exit'))) ||
-    eventDeactivated ||
-    topicDeactivated;
+    (!hasExplicitIntervalDirection && (
+      intervalType === 'deactivated' ||
+      eventType.includes('geofence_exit') ||
+      (geofenceSignal && (messageText.includes('salida') || messageText.includes(' exit'))) ||
+      eventDeactivated ||
+      topicDeactivated
+    ));
 
   const geofenceAlarm = geofenceAlarmFlag || geofenceEnter || geofenceExit;
 
@@ -482,14 +489,19 @@ async function persistEvent({ firestore, config, event, classification }) {
         ? 'geofence_enter'
         : (effectiveClassification.geofenceExit ? 'geofence_exit' : 'geofence_alert'));
 
-    const dedupeSource = [
-      String(event.deviceId),
-      alertKind,
-      effectiveClassification.geofenceName || '',
-      String(dedupeBucket),
-    ].join('|');
+    const geofenceIntervalId =
+      effectiveClassification.geofenceAlarm && event.eventId != null
+        ? String(event.eventId)
+        : null;
 
-    const dedupeKey = makeStableId(dedupeSource);
+    const dedupeKey = geofenceIntervalId
+      ? `gf_${String(event.deviceId)}_${geofenceIntervalId}`
+      : makeStableId([
+        String(event.deviceId),
+        alertKind,
+        effectiveClassification.geofenceName || '',
+        String(dedupeBucket),
+      ].join('|'));
     const alertRef = firestore.collection(config.alertsCollection).doc(dedupeKey);
     const existing = await alertRef.get();
 
