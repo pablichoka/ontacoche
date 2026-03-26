@@ -496,8 +496,21 @@ async function persistEvent({ firestore, config, event, classification }) {
         ? String(event.eventId)
         : null;
 
+    const geofenceTopic = String(firstDefined(raw, ['topic', 'event.topic']) || '').toLowerCase();
+    const geofenceIntervalEnd = firstDefined(raw, ['end', 'interval.end']);
+
     const dedupeKey = geofenceIntervalId
-      ? `gf_${String(event.deviceId)}_${geofenceIntervalId}`
+      ? makeStableId([
+        'gf',
+        String(event.deviceId),
+        geofenceIntervalId,
+        alertKind,
+        effectiveClassification.geofenceName || '',
+        // allows updated interval transitions to be persisted when end changes due to geofence resize/recalc
+        geofenceTopic.includes('/updated') && geofenceIntervalEnd != null
+          ? String(geofenceIntervalEnd)
+          : '',
+      ].join('|'))
       : makeStableId([
         String(event.deviceId),
         alertKind,
