@@ -30,7 +30,8 @@ Token registration endpoint:
 Geofence poll endpoint (calculator fallback):
 
 - `POST /api/poll-geofence`
-- required header: `Authorization: Bearer <WEBHOOK_BEARER_SECRET>`
+- no auth required by default (recommended only for cron/internal use)
+- optional auth: set `POLL_GEOFENCE_BEARER` and then send `Authorization: Bearer <POLL_GEOFENCE_BEARER>`
 - requires env vars `FLESPI_TOKEN` and `GEOFENCE_CALC_ID`
 - behavior: reads last calculator interval per assigned device and creates minimal geofence alerts in Firestore (`device_alerts`) when interval id changes.
 
@@ -51,6 +52,7 @@ Geofence poll endpoint (calculator fallback):
 - `ALERTS_COLLECTION`: alert records collection. default: `device_alerts`
 - `FLESPI_TOKEN`: optional token used by the webhook to fetch latest calculator interval directly from Flespi.
 - `GEOFENCE_CALC_ID`: optional calculator id used with `FLESPI_TOKEN` to infer enter/exit geofence alerts when stream payload lacks explicit geofence event fields.
+- `POLL_GEOFENCE_BEARER`: optional bearer to protect `POST /api/poll-geofence`. If omitted, poll endpoint is open.
 - `STORE_STATE_HISTORY`: enable or disable storing 0200 history snapshots. default: `true`
 - `PUSH_ON_COMMUNICATION_ACTIVE`: send push for plain 0200 communication events. default: `false`
 - `LOG_LEVEL`: not enforced yet, default: `info`
@@ -100,6 +102,7 @@ npm run check
 4. add environment variables for Preview and Production.
 5. deploy.
 6. copy endpoint: `https://<project>.vercel.app/api/flespi-webhook`.
+7. optional: `vercel.json` includes a cron (`* * * * *`) to execute `POST /api/poll-geofence` every minute.
 
 ## test webhook with curl
 
@@ -122,7 +125,15 @@ curl -X POST "https://<project>.vercel.app/api/flespi-webhook" \
 
 ```bash
 curl -X POST "https://<project>.vercel.app/api/poll-geofence" \
-  -H "Authorization: Bearer <WEBHOOK_BEARER_SECRET>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+With optional bearer enabled:
+
+```bash
+curl -X POST "https://<project>.vercel.app/api/poll-geofence" \
+  -H "Authorization: Bearer <POLL_GEOFENCE_BEARER>" \
   -H "Content-Type: application/json" \
   -d '{}'
 ```

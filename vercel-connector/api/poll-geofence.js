@@ -74,8 +74,12 @@ async function fetchLastInterval(config, deviceId) {
 }
 
 function authOk(req, config) {
+  if (!config.pollGeofenceBearer) {
+    return true;
+  }
+
   const authHeader = req.headers.authorization || '';
-  return authHeader === `Bearer ${config.webhookBearerSecret}`;
+  return authHeader === `Bearer ${config.pollGeofenceBearer}`;
 }
 
 module.exports = async function handler(req, res) {
