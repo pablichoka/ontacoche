@@ -27,6 +27,13 @@ Token registration endpoint:
 - required content type: `application/json`
 - payload must include `token` plus `device_id` or `user_id`
 
+Geofence poll endpoint (calculator fallback):
+
+- `POST /api/poll-geofence`
+- required header: `Authorization: Bearer <WEBHOOK_BEARER_SECRET>`
+- requires env vars `FLESPI_TOKEN` and `GEOFENCE_CALC_ID`
+- behavior: reads last calculator interval per assigned device and creates minimal geofence alerts in Firestore (`device_alerts`) when interval id changes.
+
 ## required environment variables
 
 - `WEBHOOK_BEARER_SECRET`: shared secret used by Flespi webhook authorization header.
@@ -109,6 +116,15 @@ curl -X POST "https://<project>.vercel.app/api/flespi-webhook" \
     "severity": "high",
     "ts": 1774137600000
   }'
+```
+
+## force geofence poll with curl
+
+```bash
+curl -X POST "https://<project>.vercel.app/api/poll-geofence" \
+  -H "Authorization: Bearer <WEBHOOK_BEARER_SECRET>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
 ```
 
 ## expected response
