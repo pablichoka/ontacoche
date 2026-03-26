@@ -444,6 +444,46 @@ function buildStateSnapshot(event, classification) {
   };
 }
 
+async function fetchLatestCalcInterval(config, deviceId) {
+  if (!config.flespiToken || !config.geofenceCalcId || !deviceId) {
+    return null;
+  }
+
+  const url = new URL(
+    `https://flespi.io/gw/calcs/${config.geofenceCalcId}/devices/${deviceId}/intervals/last`,
+  );
+  url.searchParams.set('data', JSON.stringify({
+    fields: 'id,type,geofence,begin,end,timestamp',
+  }));
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      Authorization: `FlespiToken ${config.flespiToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = await response.json();
+  const interval = Array.isArray(payload?.result) ? payload.result[0] : null;
+  if (!interval || interval.id == null) {
+    return null;
+  }
+
+  const type = String(interval.type || '').toLowerCase();
+  return {
+    id: String(interval.id),
+    type,
+    geofence: interval.geofence == null ? null : String(interval.geofence),
+    begin: interval.begin ?? null,
+    end: interval.end ?? null,
+    timestamp: interval.timestamp ?? null,
+  };
+}
+
 async function persistEvent({ firestore, config, event, classification }) {
   if (!event.deviceId) {
     return { alertCreated: false, dedupeKey: null };
@@ -467,6 +507,13 @@ async function persistEvent({ firestore, config, event, classification }) {
 
     const previousRaw = previousState ? previousState.geofence_status : null;
     previousGeofenceStatus = previousRaw == null ? null : asBoolean(previousRaw);
+  }
+
+  let latestCalcInterval = null;
+  try {
+    latestCalcInterval = await fetchLatestCalcInterval(config, event.deviceId);
+  } catch (_) {
+    latestCalcInterval = null;
   }
 
   let effectiveClassification = classification;
@@ -503,9 +550,39 @@ async function persistEvent({ firestore, config, event, classification }) {
     };
   }
 
-  const snapshot = buildStateSnapshot(event, effectiveClassification);
+  if (
+    !effectiveClassification.geofenceAlarm &&
+    latestCalcInterval &&
+    latestCalcInterval.id &&
+    String(previousState?.last_calc_interval_id || '') !== latestCalcInterval.id
+  ) {
+    const isEnter = latestCalcInterval.type === 'enter' || latestCalcInterval.type === 'activated';
+    const isExit = latestCalcInterval.type === 'exit' || latestCalcInterval.type === 'deactivated';
+    const geofenceName = latestCalcInterval.geofence || null;
 
-  if (classification.communicationActive || currentGeofenceStatus != null) {
+    effectiveClassification = {
+      ...effectiveClassification,
+      geofenceAlarm: true,
+      geofenceEnter: isEnter,
+      geofenceExit: isExit,
+      geofenceName,
+      shouldPush: true,
+      severity: 'high',
+      title: 'Alerta de geocerca',
+      body: geofenceName
+        ? (isEnter ? `Entrada en geocerca: ${geofenceName}` : `Salida de geocerca: ${geofenceName}`)
+        : (isEnter ? 'Entrada en geocerca detectada' : 'Salida de geocerca detectada'),
+    };
+  }
+
+  const snapshot = buildStateSnapshot(event, effectiveClassification);
+  if (latestCalcInterval) {
+    snapshot.last_calc_interval_id = latestCalcInterval.id;
+    snapshot.last_calc_interval_type = latestCalcInterval.type;
+    snapshot.last_calc_geofence = latestCalcInterval.geofence;
+  }
+
+  if (classification.communicationActive || currentGeofenceStatus != null || latestCalcInterval != null) {
     await stateRef.set(snapshot, { merge: true });
 
     if (config.storeStateHistory) {
