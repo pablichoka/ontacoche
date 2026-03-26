@@ -8,7 +8,7 @@ Serverless webhook connector to deliver Flespi events to Firebase Cloud Messagin
 
 Current behavior:
 
-- incoming stream events are classified in the webhook.
+- incoming stream or platform webhook events are classified in the webhook.
 - report `0200` updates current device state in Firestore (`device_last_state`) and can be appended to history.
 - push notifications are sent only for alert-like events (vibration/geofence by default).
 - regular active communication (`0200` without alarms) is persisted but not pushed unless explicitly enabled.
@@ -42,8 +42,6 @@ Token registration endpoint:
 - `DEVICE_STATE_COLLECTION`: latest per-device state collection. default: `device_last_state`
 - `STATE_HISTORY_COLLECTION`: state history collection (for 0200 snapshots). default: `device_state_history`
 - `ALERTS_COLLECTION`: alert records collection. default: `device_alerts`
-- `FLESPI_TOKEN`: optional token used by the webhook to fetch latest calculator interval directly from Flespi.
-- `GEOFENCE_CALC_ID`: optional calculator id used with `FLESPI_TOKEN` to infer enter/exit geofence alerts when stream payload lacks explicit geofence event fields.
 - `STORE_STATE_HISTORY`: enable or disable storing 0200 history snapshots. default: `true`
 - `PUSH_ON_COMMUNICATION_ACTIVE`: send push for plain 0200 communication events. default: `false`
 - `LOG_LEVEL`: not enforced yet, default: `info`

@@ -44,8 +44,6 @@ function readConfig() {
     deviceStateCollection: process.env.DEVICE_STATE_COLLECTION || 'device_last_state',
     stateHistoryCollection: process.env.STATE_HISTORY_COLLECTION || 'device_state_history',
     alertsCollection: process.env.ALERTS_COLLECTION || 'device_alerts',
-    flespiToken: (process.env.FLESPI_TOKEN || '').trim() || null,
-    geofenceCalcId: Number.parseInt((process.env.GEOFENCE_CALC_ID || '').trim(), 10) || null,
     storeStateHistory: envAsBoolean(process.env.STORE_STATE_HISTORY, true),
     pushOnCommunicationActive: envAsBoolean(process.env.PUSH_ON_COMMUNICATION_ACTIVE, false),
   };
