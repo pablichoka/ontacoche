@@ -104,13 +104,23 @@ final persistAlertUseCaseProvider =
 
 final alertsSeenCutoffProvider = StateProvider<DateTime?>((Ref ref) => null);
 
-final acknowledgeAlertsViewUseCaseProvider = Provider<void Function()>((
-  Ref ref,
-) {
-  return () {
-    ref.read(alertsSeenCutoffProvider.notifier).state = DateTime.now();
-  };
-});
+final acknowledgeAlertsViewUseCaseProvider =
+    Provider<void Function(List<DeviceAlert>)>((Ref ref) {
+      return (List<DeviceAlert> alerts) {
+        DateTime cutoff = DateTime.now();
+        if (alerts.isNotEmpty) {
+          DateTime latest = alerts.first.timestamp;
+          for (final DeviceAlert alert in alerts) {
+            if (alert.timestamp.isAfter(latest)) {
+              latest = alert.timestamp;
+            }
+          }
+          cutoff = latest.add(const Duration(milliseconds: 1));
+        }
+
+        ref.read(alertsSeenCutoffProvider.notifier).state = cutoff;
+      };
+    });
 
 final alertsUnseenCountProvider = Provider<int>((Ref ref) {
   final AsyncValue<List<DeviceAlert>> alertsState = ref.watch(

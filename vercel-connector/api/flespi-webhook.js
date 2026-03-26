@@ -207,6 +207,12 @@ function normalizeEvent(body) {
     extractDeviceIdFromTopic(rawTopic) ||
     null;
 
+  const normalizedRaw = {
+    ...root,
+    ...payload,
+    payload,
+  };
+
   return {
     eventId: firstDefined(root, ['event_id', 'id', 'event.id']) || firstDefined(payload, ['event_id', 'id']) || null,
     deviceId: deviceId != null ? String(deviceId) : null,
@@ -217,11 +223,7 @@ function normalizeEvent(body) {
     body: firstDefined(root, ['body', 'message', 'notification.body']) || firstDefined(payload, ['body', 'message']) || 'Se detecto una alerta en el tracker',
     severity: firstDefined(root, ['severity']) || firstDefined(payload, ['severity']) || 'info',
     ts: firstDefined(root, ['ts', 'timestamp', 'server.timestamp']) || firstDefined(payload, ['ts', 'timestamp', 'server.timestamp']) || Date.now(),
-    raw: {
-      ...payload,
-      ...root,
-      payload,
-    },
+    raw: normalizedRaw,
   };
 }
 

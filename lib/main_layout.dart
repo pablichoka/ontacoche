@@ -7,6 +7,7 @@ import 'screens/alerts_screen.dart';
 import 'screens/settings_screen.dart';
 import 'widgets/custom_bottom_navbar.dart';
 import 'providers/telemetry_provider.dart';
+import 'models/device_alert.dart';
 
 class MainLayout extends ConsumerStatefulWidget {
   const MainLayout({super.key});
@@ -39,11 +40,14 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
       bottomNavigationBar: Consumer(
         builder: (context, ref, _) {
           final int count = ref.watch(alertsUnseenCountProvider);
+          final List<DeviceAlert> currentAlerts =
+              ref.watch(alertsHistoryProvider).valueOrNull ??
+              const <DeviceAlert>[];
           return CustomBottomNavbar(
             selectedIndex: _currentIndex,
             onDestinationSelected: (int idx) {
               if (idx == 2) {
-                ref.read(acknowledgeAlertsViewUseCaseProvider)();
+                ref.read(acknowledgeAlertsViewUseCaseProvider)(currentAlerts);
                 // mark alerts as seen when opening the alerts tab
                 ref.read(markAllAlertsSeenUseCaseProvider)().catchError((_) {});
               }
