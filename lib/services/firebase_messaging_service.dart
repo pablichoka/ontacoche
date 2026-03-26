@@ -16,11 +16,11 @@ bool _notificationsInitialized = false;
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await _initializeLocalNotifications();
-  await _showNotificationFromMessage(message);
+  if (_shouldShowLocalNotification(message)) {
+    await _showNotificationFromMessage(message);
+  }
 }
 
 Future<void> initializeFirebaseMessaging() async {
@@ -41,7 +41,9 @@ Future<void> initializeFirebaseMessaging() async {
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
   FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-    await _showNotificationFromMessage(message);
+    if (_shouldShowLocalNotification(message)) {
+      await _showNotificationFromMessage(message);
+    }
   });
 
   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
@@ -67,6 +69,11 @@ Future<void> initializeFirebaseMessaging() async {
   debugPrint('FCM permission status: ${settings.authorizationStatus}');
 }
 
+bool _shouldShowLocalNotification(RemoteMessage message) {
+  // system notifications already render `notification` payload in background.
+  return message.notification == null;
+}
+
 Future<void> _initializeLocalNotifications() async {
   if (_notificationsInitialized) {
     return;
@@ -78,9 +85,10 @@ Future<void> _initializeLocalNotifications() async {
   await _localNotifications.initialize(initSettings);
 
   final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
-      _localNotifications.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin
-      >();
+      _localNotifications
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
 
   await androidPlugin?.createNotificationChannel(
     const AndroidNotificationChannel(

@@ -98,6 +98,51 @@ class VercelConnectorService {
         .toList(growable: false);
   }
 
+  Future<int> markAlertsChecked(
+    String deviceId, {
+    List<String>? alertIds,
+    int limit = 200,
+  }) async {
+    final Uri uri = Uri.parse('$baseUrl/api/device-alerts');
+    final Map<String, String> headers = <String, String>{
+      'Content-Type': 'application/json',
+    };
+    if (readBearer.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $readBearer';
+    }
+
+    final Map<String, dynamic> body = <String, dynamic>{
+      'device_id': deviceId,
+      'limit': limit,
+    };
+
+    if (alertIds != null && alertIds.isNotEmpty) {
+      body['alert_ids'] = alertIds;
+    }
+
+    final http.Response response = await _client.post(
+      uri,
+      headers: headers,
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw VercelConnectorException(
+        statusCode: response.statusCode,
+        message: response.body,
+      );
+    }
+
+    final Map<String, dynamic> payload =
+        jsonDecode(response.body) as Map<String, dynamic>;
+    final Object? marked = payload['marked'];
+    if (marked is num) {
+      return marked.toInt();
+    }
+
+    return int.tryParse(marked?.toString() ?? '') ?? 0;
+  }
+
   Future<Map<String, dynamic>> getSettingsDeviceInfo(String deviceId) async {
     final DevicePosition? position = await getCurrentDeviceState(deviceId);
     final DateTime? ts = position?.timestamp;

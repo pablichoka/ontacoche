@@ -9,7 +9,24 @@ class AlertsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<List<DeviceAlert>> alertsState = ref.watch(alertsHistoryProvider);
+    ref.listen<AsyncValue<List<DeviceAlert>>>(alertsHistoryProvider, (
+      AsyncValue<List<DeviceAlert>>? previous,
+      AsyncValue<List<DeviceAlert>> next,
+    ) {
+      final bool hasUnchecked = next.maybeWhen(
+        data: (List<DeviceAlert> alerts) =>
+            alerts.any((DeviceAlert alert) => !alert.checked),
+        orElse: () => false,
+      );
+
+      if (hasUnchecked) {
+        ref.read(markAllAlertsSeenUseCaseProvider)().catchError((_) {});
+      }
+    });
+
+    final AsyncValue<List<DeviceAlert>> alertsState = ref.watch(
+      alertsHistoryProvider,
+    );
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -29,7 +46,11 @@ class AlertsScreen extends ConsumerWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.notifications_off_rounded, size: 48, color: Colors.grey),
+                  const Icon(
+                    Icons.notifications_off_rounded,
+                    size: 48,
+                    color: Colors.grey,
+                  ),
                   const SizedBox(height: 16),
                   const Text('No hay alertas recientes'),
                 ],
@@ -45,7 +66,9 @@ class AlertsScreen extends ConsumerWidget {
             itemBuilder: (BuildContext context, int index) {
               final _AlertGroup group = groups[index];
               return Padding(
-                padding: EdgeInsets.only(bottom: index == groups.length - 1 ? 0 : 20),
+                padding: EdgeInsets.only(
+                  bottom: index == groups.length - 1 ? 0 : 20,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
@@ -61,10 +84,12 @@ class AlertsScreen extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    ...group.alerts.map((DeviceAlert alert) => Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _AlertCard(alert: alert),
-                        )),
+                    ...group.alerts.map(
+                      (DeviceAlert alert) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _AlertCard(alert: alert),
+                      ),
+                    ),
                   ],
                 ),
               );
@@ -76,7 +101,11 @@ class AlertsScreen extends ConsumerWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.notifications_off_rounded, size: 48, color: Colors.grey),
+              const Icon(
+                Icons.notifications_off_rounded,
+                size: 48,
+                color: Colors.grey,
+              ),
               const SizedBox(height: 16),
               const Text('No hay alertas recientes'),
             ],
@@ -92,19 +121,26 @@ List<_AlertGroup> _groupAlertsByDay(List<DeviceAlert> alerts) {
 
   for (final DeviceAlert alert in alerts) {
     final DateTime local = alert.timestamp;
-    final String key = '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+    final String key =
+        '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
     grouped.putIfAbsent(key, () => <DeviceAlert>[]).add(alert);
   }
 
-  final List<String> keys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
-  return keys.map((String key) {
-    final List<DeviceAlert> groupAlerts = grouped[key]!
-      ..sort((DeviceAlert a, DeviceAlert b) => b.timestamp.compareTo(a.timestamp));
-    return _AlertGroup(
-      label: _formatGroupLabel(groupAlerts.first.timestamp),
-      alerts: groupAlerts,
-    );
-  }).toList(growable: false);
+  final List<String> keys = grouped.keys.toList()
+    ..sort((a, b) => b.compareTo(a));
+  return keys
+      .map((String key) {
+        final List<DeviceAlert> groupAlerts = grouped[key]!
+          ..sort(
+            (DeviceAlert a, DeviceAlert b) =>
+                b.timestamp.compareTo(a.timestamp),
+          );
+        return _AlertGroup(
+          label: _formatGroupLabel(groupAlerts.first.timestamp),
+          alerts: groupAlerts,
+        );
+      })
+      .toList(growable: false);
 }
 
 String _formatGroupLabel(DateTime timestamp) {
@@ -113,11 +149,15 @@ String _formatGroupLabel(DateTime timestamp) {
   final DateTime today = DateTime(now.year, now.month, now.day);
   final DateTime day = DateTime(local.year, local.month, local.day);
 
-  if (today.year == day.year && today.month == day.month && today.day == day.day) {
+  if (today.year == day.year &&
+      today.month == day.month &&
+      today.day == day.day) {
     return 'HOY';
   }
   final DateTime yesterday = today.subtract(const Duration(days: 1));
-  if (yesterday.year == day.year && yesterday.month == day.month && yesterday.day == day.day) {
+  if (yesterday.year == day.year &&
+      yesterday.month == day.month &&
+      yesterday.day == day.day) {
     return 'AYER';
   }
 
@@ -210,10 +250,7 @@ class _AlertCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   alert.message,
-                  style: TextStyle(
-                    color: Colors.grey.shade800,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: Colors.grey.shade800, fontSize: 14),
                 ),
               ],
             ),
@@ -225,11 +262,16 @@ class _AlertCard extends StatelessWidget {
 
   String _getNameFromType(DeviceAlertType type) {
     switch (type) {
-      case DeviceAlertType.geofence: return 'Geovalla';
-      case DeviceAlertType.vibration: return 'Vibración';
-      case DeviceAlertType.unknown: return 'Alerta';
-      case DeviceAlertType.lowBattery: return 'Batería baja';
-      case DeviceAlertType.movement: return 'Movimiento';
+      case DeviceAlertType.geofence:
+        return 'Geovalla';
+      case DeviceAlertType.vibration:
+        return 'Vibración';
+      case DeviceAlertType.unknown:
+        return 'Alerta';
+      case DeviceAlertType.lowBattery:
+        return 'Batería baja';
+      case DeviceAlertType.movement:
+        return 'Movimiento';
     }
   }
 

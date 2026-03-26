@@ -35,14 +35,10 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
+      body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: Consumer(
         builder: (context, ref, _) {
-          final AsyncValue<int> unseen = ref.watch(alertsUnseenCountProvider);
-          final int count = unseen.maybeWhen(data: (d) => d, orElse: () => 0);
+          final int count = ref.watch(alertsUnseenCountProvider);
           return CustomBottomNavbar(
             selectedIndex: _currentIndex,
             onDestinationSelected: (int idx) {

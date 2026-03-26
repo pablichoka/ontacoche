@@ -8,10 +8,7 @@ import '../models/device_alert.dart';
 import '../utils/parsers.dart';
 
 class TelemetryDatabaseService {
-  TelemetryDatabaseService({
-    this.retentionDays = 30,
-    this.historyLimit = 100,
-  });
+  TelemetryDatabaseService({this.retentionDays = 30, this.historyLimit = 100});
 
   final int retentionDays;
   final int historyLimit;
@@ -20,9 +17,10 @@ class TelemetryDatabaseService {
   Future<Database>? _openingDatabase;
   final StreamController<List<TelemetryRecord>> _historyController =
       StreamController<List<TelemetryRecord>>.broadcast();
-    final StreamController<List<DeviceAlert>> _alertsController =
+  final StreamController<List<DeviceAlert>> _alertsController =
       StreamController<List<DeviceAlert>>.broadcast();
-    final StreamController<int> _unseenController = StreamController<int>.broadcast();
+  final StreamController<int> _unseenController =
+      StreamController<int>.broadcast();
 
   Stream<List<TelemetryRecord>> watchRecentRecords() async* {
     yield await fetchRecentRecords(limit: historyLimit);
@@ -65,12 +63,17 @@ class TelemetryDatabaseService {
     await _publishRecentRecords(database);
   }
 
-  Future<bool> insertAlert(DeviceAlert alert, {required String deviceId}) async {
+  Future<bool> insertAlert(
+    DeviceAlert alert, {
+    required String deviceId,
+  }) async {
     final Database database = await _openDatabase();
 
     // deduplicate alerts inside a short window while preserving geofence edges
     final String typeStr = alert.type.toString().split('.').last;
-    final DateTime windowStart = alert.timestamp.subtract(const Duration(seconds: 30));
+    final DateTime windowStart = alert.timestamp.subtract(
+      const Duration(seconds: 30),
+    );
     final DateTime windowEnd = alert.timestamp.add(const Duration(seconds: 30));
     final List<String> whereClauses = <String>[
       'type = ?',
@@ -87,7 +90,9 @@ class TelemetryDatabaseService {
       whereClauses.add('COALESCE(geofence_name, "") = ?');
       whereArgs.add(alert.geofenceName ?? '');
       whereClauses.add('COALESCE(is_entering, -1) = ?');
-      whereArgs.add(alert.isEntering == null ? -1 : (alert.isEntering! ? 1 : 0));
+      whereArgs.add(
+        alert.isEntering == null ? -1 : (alert.isEntering! ? 1 : 0),
+      );
     }
 
     final List<Map<String, Object?>> existing = await database.query(
@@ -107,7 +112,9 @@ class TelemetryDatabaseService {
       'message': alert.message,
       'value': alert.value?.toString(),
       'geofence_name': alert.geofenceName,
-      'is_entering': alert.isEntering == null ? null : (alert.isEntering! ? 1 : 0),
+      'is_entering': alert.isEntering == null
+          ? null
+          : (alert.isEntering! ? 1 : 0),
       'seen': 0,
       'timestamp': alert.timestamp.toIso8601String(),
       'created_at': Parsers.now().toIso8601String(),
@@ -154,7 +161,9 @@ class TelemetryDatabaseService {
 
   Future<void> markAllAlertsSeen() async {
     final Database database = await _openDatabase();
-    await database.update('alerts', <String, Object?>{'seen': 1}, where: 'seen = 0');
+    await database.update('alerts', <String, Object?>{
+      'seen': 1,
+    }, where: 'seen = 0');
     await _publishUnseenCount(database);
     await _publishRecentAlerts(database);
   }
@@ -197,21 +206,23 @@ class TelemetryDatabaseService {
     final String? geofenceName = map['geofence_name'] as String?;
     final int? isEnteringInt = map['is_entering'] as int?;
     final bool? isEntering = isEnteringInt == null ? null : isEnteringInt == 1;
+    final int seen = ((map['seen'] as int?) ?? 0);
     final String timestampStr =
-      (map['timestamp'] as String?) ?? Parsers.now().toIso8601String();
-    final String createdAtStr =
-      (map['created_at'] as String?) ?? timestampStr;
+        (map['timestamp'] as String?) ?? Parsers.now().toIso8601String();
+    final String createdAtStr = (map['created_at'] as String?) ?? timestampStr;
     final DateTime sourceTs = DateTime.parse(timestampStr);
     final DateTime createdAt = DateTime.parse(createdAtStr);
     final DateTime ts = createdAt.isAfter(sourceTs) ? createdAt : sourceTs;
 
     return DeviceAlert(
+      id: map['id']?.toString(),
       type: type,
       message: message,
       timestamp: ts,
       value: map['value'],
       geofenceName: geofenceName,
       isEntering: isEntering,
+      checked: seen == 1,
     );
   }
 
@@ -264,7 +275,10 @@ class TelemetryDatabaseService {
 
   Future<Database> _createDatabase() async {
     final String databasesPath = await getDatabasesPath();
-    final String databasePath = path.join(databasesPath, 'ontacoche_telemetry.db');
+    final String databasePath = path.join(
+      databasesPath,
+      'ontacoche_telemetry.db',
+    );
 
     final Database database = await openDatabase(
       databasePath,
@@ -304,8 +318,12 @@ class TelemetryDatabaseService {
             created_at TEXT NOT NULL
           )
         ''');
-        await db.execute('CREATE INDEX idx_alerts_timestamp ON alerts(timestamp DESC)');
-        await db.execute('CREATE INDEX idx_alerts_device_id ON alerts(device_id)');
+        await db.execute(
+          'CREATE INDEX idx_alerts_timestamp ON alerts(timestamp DESC)',
+        );
+        await db.execute(
+          'CREATE INDEX idx_alerts_device_id ON alerts(device_id)',
+        );
       },
       onOpen: (Database db) async {
         // Ensure alerts table exists for upgrades / existing DBs
@@ -323,15 +341,24 @@ class TelemetryDatabaseService {
             created_at TEXT NOT NULL
           )
         ''');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(timestamp DESC)');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_alerts_device_id ON alerts(device_id)');
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(timestamp DESC)',
+        );
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_alerts_device_id ON alerts(device_id)',
+        );
         // Ensure 'seen' column exists on older DBs; add it if missing
         try {
-          final List<Map<String, Object?>> info =
-              await db.rawQuery('PRAGMA table_info(alerts)');
-          final bool hasSeen = info.any((Map<String, Object?> row) => (row['name'] as String?) == 'seen');
+          final List<Map<String, Object?>> info = await db.rawQuery(
+            'PRAGMA table_info(alerts)',
+          );
+          final bool hasSeen = info.any(
+            (Map<String, Object?> row) => (row['name'] as String?) == 'seen',
+          );
           if (!hasSeen) {
-            await db.execute('ALTER TABLE alerts ADD COLUMN seen INTEGER NOT NULL DEFAULT 0');
+            await db.execute(
+              'ALTER TABLE alerts ADD COLUMN seen INTEGER NOT NULL DEFAULT 0',
+            );
           }
         } catch (_) {
           // Ignore migration failures; table may not exist yet or PRAGMA unsupported on platform
@@ -351,7 +378,9 @@ class TelemetryDatabaseService {
   }
 
   Future<void> _cleanupOldRecords(Database database) async {
-    final DateTime cutoff = DateTime.now().toUtc().subtract(Duration(days: retentionDays));
+    final DateTime cutoff = DateTime.now().toUtc().subtract(
+      Duration(days: retentionDays),
+    );
     await database.delete(
       'telemetry_records',
       where: 'recorded_at < ?',
@@ -360,7 +389,9 @@ class TelemetryDatabaseService {
   }
 
   Future<void> _cleanupOldAlerts(Database database) async {
-    final DateTime cutoff = DateTime.now().toUtc().subtract(Duration(days: retentionDays));
+    final DateTime cutoff = DateTime.now().toUtc().subtract(
+      Duration(days: retentionDays),
+    );
     await database.delete(
       'alerts',
       where: 'timestamp < ?',
@@ -380,7 +411,9 @@ class TelemetryDatabaseService {
       limit: historyLimit,
     );
 
-    _historyController.add(rows.map(TelemetryRecord.fromMap).toList(growable: false));
+    _historyController.add(
+      rows.map(TelemetryRecord.fromMap).toList(growable: false),
+    );
   }
 
   Future<void> _publishRecentAlerts(Database database) async {
@@ -394,7 +427,8 @@ class TelemetryDatabaseService {
       limit: historyLimit,
     );
 
-    _alertsController.add(rows.map(_deviceAlertFromMap).toList(growable: false));
+    _alertsController.add(
+      rows.map(_deviceAlertFromMap).toList(growable: false),
+    );
   }
-  
 }

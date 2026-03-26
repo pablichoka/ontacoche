@@ -4,49 +4,63 @@ enum DeviceAlertType { geofence, vibration, lowBattery, movement, unknown }
 
 class DeviceAlert {
   const DeviceAlert({
+    this.id,
     required this.type,
     required this.message,
     required this.timestamp,
     this.value,
     this.geofenceName,
     this.isEntering,
+    this.checked = true,
+    this.dedupeKey,
   });
 
+  final String? id;
   final DeviceAlertType type;
   final String message;
   final DateTime timestamp;
   final dynamic value;
   final String? geofenceName;
   final bool? isEntering;
+  final bool checked;
+  final String? dedupeKey;
 
   static DeviceAlert? fromBackendJson(Map<String, dynamic> json) {
     final Map<String, dynamic> payload = json['payload'] is Map
-      ? Map<String, dynamic>.from(json['payload'] as Map)
-      : const <String, dynamic>{};
+        ? Map<String, dynamic>.from(json['payload'] as Map)
+        : const <String, dynamic>{};
 
     final String eventKind =
-      (json['event_kind'] ??
-          json['event_type'] ??
-          payload['event_kind'] ??
-          payload['event_type'] ??
-          '')
+        (json['event_kind'] ??
+                json['event_type'] ??
+                payload['event_kind'] ??
+                payload['event_type'] ??
+                '')
+            .toString()
+            .toLowerCase();
+    final String messageText =
+        (json['message'] ??
+                json['body'] ??
+                payload['message'] ??
+                payload['body'] ??
+                '')
+            .toString()
+            .toLowerCase();
+    final String titleText = (json['title'] ?? payload['title'] ?? '')
         .toString()
         .toLowerCase();
-    final String messageText = (
-      json['message'] ?? json['body'] ?? payload['message'] ?? payload['body'] ?? ''
-    ).toString().toLowerCase();
-    final String titleText = (
-      json['title'] ?? payload['title'] ?? ''
-    ).toString().toLowerCase();
     final dynamic geofenceRaw =
-      json['geofence_name'] ?? json['geofence'] ?? payload['geofence_name'] ?? payload['geofence'];
+        json['geofence_name'] ??
+        json['geofence'] ??
+        payload['geofence_name'] ??
+        payload['geofence'];
     final bool explicitGeofence = geofenceRaw != null;
     final bool vibrationAlarm =
-      json['vibration_alarm'] == true ||
-      payload['vibration_alarm'] == true ||
-      payload['vibration.alarm'] == true;
+        json['vibration_alarm'] == true ||
+        payload['vibration_alarm'] == true ||
+        payload['vibration.alarm'] == true;
     final bool geofenceAlarm =
-      json['geofence_alarm'] == true || payload['geofence_alarm'] == true;
+        json['geofence_alarm'] == true || payload['geofence_alarm'] == true;
 
     DeviceAlertType type = DeviceAlertType.unknown;
     bool? isEntering;
@@ -55,17 +69,22 @@ class DeviceAlert {
         eventKind == 'vibration' ||
         eventKind.contains('vibration')) {
       type = DeviceAlertType.vibration;
-    } else if (eventKind == 'geofence_enter' || eventKind == 'enter' || eventKind.contains('activated')) {
+    } else if (eventKind == 'geofence_enter' ||
+        eventKind == 'enter' ||
+        eventKind.contains('activated')) {
       type = DeviceAlertType.geofence;
       isEntering = true;
-    } else if (eventKind == 'geofence_exit' || eventKind == 'exit' || eventKind.contains('deactivated')) {
+    } else if (eventKind == 'geofence_exit' ||
+        eventKind == 'exit' ||
+        eventKind.contains('deactivated')) {
       type = DeviceAlertType.geofence;
       isEntering = false;
     } else if (vibrationAlarm) {
       type = DeviceAlertType.vibration;
     } else if (geofenceAlarm) {
       type = DeviceAlertType.geofence;
-      isEntering = (json['geofence_enter'] == true || payload['geofence_enter'] == true)
+      isEntering =
+          (json['geofence_enter'] == true || payload['geofence_enter'] == true)
           ? true
           : ((json['geofence_exit'] == true || payload['geofence_exit'] == true)
                 ? false
@@ -86,7 +105,8 @@ class DeviceAlert {
     }
 
     if (type == DeviceAlertType.unknown) {
-      final bool hasMeaningfulText = messageText.trim().isNotEmpty ||
+      final bool hasMeaningfulText =
+          messageText.trim().isNotEmpty ||
           titleText.trim().isNotEmpty ||
           eventKind.trim().isNotEmpty;
       if (!hasMeaningfulText) {
@@ -95,11 +115,13 @@ class DeviceAlert {
     }
 
     final DateTime timestamp = _timestampFromBackendJson(json);
+    final bool checked = _parseChecked(json['checked'] ?? json['seen']) ?? true;
 
     final String? geofenceName = geofenceRaw?.toString();
     final String message =
-      ((json['message'] ?? json['body'])?.toString().trim().isNotEmpty ?? false)
-      ? (json['message'] ?? json['body']).toString()
+        ((json['message'] ?? json['body'])?.toString().trim().isNotEmpty ??
+            false)
+        ? (json['message'] ?? json['body']).toString()
         : switch (type) {
             DeviceAlertType.vibration => '¡Vibración detectada!',
             DeviceAlertType.geofence =>
@@ -112,13 +134,36 @@ class DeviceAlert {
           };
 
     return DeviceAlert(
+      id: json['id']?.toString(),
       type: type,
       message: message,
       timestamp: timestamp,
       value: json['payload'] ?? json,
       geofenceName: geofenceName,
       isEntering: isEntering,
+      checked: checked,
+      dedupeKey: json['dedupe_key']?.toString(),
     );
+  }
+
+  static bool? _parseChecked(Object? raw) {
+    if (raw == null) {
+      return null;
+    }
+    if (raw is bool) {
+      return raw;
+    }
+    if (raw is num) {
+      return raw != 0;
+    }
+    final String value = raw.toString().trim().toLowerCase();
+    if (value == 'true' || value == '1' || value == 'yes') {
+      return true;
+    }
+    if (value == 'false' || value == '0' || value == 'no') {
+      return false;
+    }
+    return null;
   }
 
   static DateTime _timestampFromBackendJson(Map<String, dynamic> json) {
@@ -151,6 +196,7 @@ class DeviceAlert {
           message: '¡Vibración detectada!',
           timestamp: ts,
           value: true,
+          checked: false,
         ),
       );
     }
@@ -162,6 +208,7 @@ class DeviceAlert {
           message: 'Batería baja detectada',
           timestamp: ts,
           value: true,
+          checked: false,
         ),
       );
     }
@@ -173,6 +220,7 @@ class DeviceAlert {
           message: 'Movimiento no autorizado detectado',
           timestamp: ts,
           value: true,
+          checked: false,
         ),
       );
     }
@@ -203,6 +251,7 @@ class DeviceAlert {
       value: type,
       geofenceName: geofenceName.isEmpty ? null : geofenceName,
       isEntering: isEntering,
+      checked: false,
     );
   }
 

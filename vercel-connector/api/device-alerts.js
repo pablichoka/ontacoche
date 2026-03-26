@@ -50,7 +50,7 @@ function maybeAuthorize(req) {
 }
 
 module.exports = async function handler(req, res) {
-  if (req.method !== 'GET') {
+  if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'method not allowed' });
   }
 
@@ -58,12 +58,14 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ ok: false, error: 'unauthorized' });
   }
 
-  const deviceId = String(req.query.device_id || '').trim();
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const rawDeviceId = req.method === 'GET' ? req.query.device_id : body.device_id;
+  const deviceId = String(rawDeviceId || '').trim();
   if (!deviceId) {
     return res.status(400).json({ ok: false, error: 'device_id is required' });
   }
 
-  const requestedLimit = Number(req.query.limit || 50);
+  const requestedLimit = Number(req.method === 'GET' ? req.query.limit : body.limit || 50);
   const limit = Number.isFinite(requestedLimit)
     ? Math.min(Math.max(Math.floor(requestedLimit), 1), 200)
     : 50;
@@ -82,6 +84,57 @@ module.exports = async function handler(req, res) {
       .map((doc) => ({ id: doc.id, ...doc.data() }))
       .filter((item) => String(item.device_id || '') === deviceId)
       .slice(0, limit);
+
+    if (req.method === 'POST') {
+      const alertIds = Array.isArray(body.alert_ids)
+        ? body.alert_ids.map((value) => String(value || '').trim()).filter(Boolean)
+        : [];
+      const idSet = new Set(alertIds);
+
+      const toMark = alerts.filter((item) => {
+        if (item.checked === true) {
+          return false;
+        }
+
+        if (idSet.size === 0) {
+          return true;
+        }
+
+        return idSet.has(String(item.id || ''));
+      });
+
+      let marked = 0;
+      if (toMark.length > 0) {
+        let batch = firestore.batch();
+        let ops = 0;
+
+        for (const item of toMark) {
+          const ref = firestore.collection(alertsCollection).doc(String(item.id));
+          batch.update(ref, {
+            checked: true,
+            checked_at: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          ops += 1;
+          marked += 1;
+
+          if (ops >= 450) {
+            await batch.commit();
+            batch = firestore.batch();
+            ops = 0;
+          }
+        }
+
+        if (ops > 0) {
+          await batch.commit();
+        }
+      }
+
+      return res.status(200).json({
+        ok: true,
+        device_id: deviceId,
+        marked,
+      });
+    }
 
     return res.status(200).json({
       ok: true,

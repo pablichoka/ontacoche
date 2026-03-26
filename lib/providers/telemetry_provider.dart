@@ -49,14 +49,14 @@ final alertStreamProvider = StreamProvider<DeviceAlert>((Ref ref) async* {
   }
 });
 
-final latestStoredTelemetryProvider = FutureProvider<TelemetryRecord?>(
-  (Ref ref) {
-    final TelemetryDatabaseService service = ref.watch(
-      telemetryDatabaseServiceProvider,
-    );
-    return service.fetchLatestRecord();
-  },
-);
+final latestStoredTelemetryProvider = FutureProvider<TelemetryRecord?>((
+  Ref ref,
+) {
+  final TelemetryDatabaseService service = ref.watch(
+    telemetryDatabaseServiceProvider,
+  );
+  return service.fetchLatestRecord();
+});
 
 final telemetryCountProvider = FutureProvider<int>((Ref ref) {
   final TelemetryDatabaseService service = ref.watch(
@@ -102,19 +102,81 @@ final persistAlertUseCaseProvider =
       };
     });
 
-final _alertsSeenAtProvider = StateProvider<DateTime?>((Ref ref) => null);
+final alertsUnseenCountProvider = Provider<int>((Ref ref) {
+  final AsyncValue<List<DeviceAlert>> alertsState = ref.watch(
+    alertsHistoryProvider,
+  );
 
-final alertsUnseenCountProvider = StreamProvider<int>((Ref ref) {
-  return _pollFirestoreUnseenCount(ref);
+  return alertsState.maybeWhen(
+    data: (List<DeviceAlert> alerts) =>
+        alerts.where((DeviceAlert alert) => !alert.checked).length,
+    orElse: () => 0,
+  );
 });
 
-final markAllAlertsSeenUseCaseProvider = Provider<Future<void> Function()>(
-  (Ref ref) {
-    return () async {
-      ref.read(_alertsSeenAtProvider.notifier).state = DateTime.now();
-    };
-  },
-);
+final markAllAlertsSeenUseCaseProvider = Provider<Future<void> Function()>((
+  Ref ref,
+) {
+  return () async {
+    final List<DeviceAlert> alerts = await ref.read(
+      alertsHistoryProvider.future,
+    );
+    final List<DeviceAlert> unseen = alerts
+        .where((DeviceAlert alert) => !alert.checked)
+        .where((DeviceAlert alert) => (alert.id ?? '').isNotEmpty)
+        .toList(growable: false);
+
+    if (unseen.isEmpty) {
+      return;
+    }
+
+    final String deviceId = (dotenv.env['DEVICE_ID'] ?? '').trim();
+    if (deviceId.isNotEmpty) {
+      try {
+        await ref
+            .read(vercelConnectorServiceProvider)
+            .markAlertsChecked(
+              deviceId,
+              alertIds: unseen
+                  .map((DeviceAlert alert) => alert.id!)
+                  .toList(growable: false),
+              limit: 300,
+            );
+        return;
+      } catch (_) {
+        // fallback to direct Firestore write if backend endpoint is unavailable
+      }
+    }
+
+    final String collectionName =
+        (dotenv.env['ALERTS_COLLECTION'] ?? '').trim().isEmpty
+        ? _defaultAlertsCollection
+        : (dotenv.env['ALERTS_COLLECTION'] ?? '').trim();
+    final CollectionReference<Map<String, dynamic>> collection =
+        FirebaseFirestore.instance.collection(collectionName);
+
+    WriteBatch batch = FirebaseFirestore.instance.batch();
+    int ops = 0;
+
+    for (final DeviceAlert alert in unseen) {
+      batch.update(collection.doc(alert.id!), <String, Object?>{
+        'checked': true,
+        'checked_at': FieldValue.serverTimestamp(),
+      });
+      ops += 1;
+
+      if (ops >= 450) {
+        await batch.commit();
+        batch = FirebaseFirestore.instance.batch();
+        ops = 0;
+      }
+    }
+
+    if (ops > 0) {
+      await batch.commit();
+    }
+  };
+});
 
 Stream<List<TelemetryRecord>> _pollRecords(
   Ref ref,
@@ -216,38 +278,43 @@ Stream<List<DeviceAlert>> _watchFirestoreAlerts(Ref ref) async* {
 
       final List<Map<String, dynamic>> sourceItems = deviceId.isEmpty
           ? allItems
-          : allItems.where((Map<String, dynamic> item) {
-              final Object? rawId = item['device_id'];
-              if (rawId == null) {
-                return false;
-              }
+          : allItems
+                .where((Map<String, dynamic> item) {
+                  final Object? rawId = item['device_id'];
+                  if (rawId == null) {
+                    return false;
+                  }
 
-              if (rawId is num && numericDeviceId != null) {
-                return rawId.toInt() == numericDeviceId;
-              }
+                  if (rawId is num && numericDeviceId != null) {
+                    return rawId.toInt() == numericDeviceId;
+                  }
 
-              return rawId.toString() == deviceId;
-            }).toList(growable: false);
+                  return rawId.toString() == deviceId;
+                })
+                .toList(growable: false);
 
-      final List<Map<String, dynamic>> effectiveItems =
-          sourceItems.isNotEmpty ? sourceItems : allItems;
+      final List<Map<String, dynamic>> effectiveItems = sourceItems.isNotEmpty
+          ? sourceItems
+          : allItems;
 
       final List<DeviceAlert> alerts = effectiveItems
           .map(DeviceAlert.fromBackendJson)
           .whereType<DeviceAlert>()
-          .toList(growable: false)
+          .toList(growable: false);
+
+      final List<DeviceAlert> deduped = _dedupeAlerts(alerts)
         ..sort(
           (DeviceAlert a, DeviceAlert b) => b.timestamp.compareTo(a.timestamp),
         );
 
-      final List<DeviceAlert> limited = alerts.length <= 100
-          ? alerts
-          : alerts.sublist(0, 100);
+      final List<DeviceAlert> limited = deduped.length <= 100
+          ? deduped
+          : deduped.sublist(0, 100);
 
       final String signature = limited
           .map(
             (DeviceAlert alert) =>
-                '${alert.type.name}:${alert.timestamp.toIso8601String()}:${alert.isEntering}:${alert.message}:${alert.geofenceName ?? ''}',
+                '${alert.id ?? ''}:${alert.dedupeKey ?? ''}:${alert.checked}:${alert.type.name}:${alert.timestamp.toIso8601String()}:${alert.isEntering}:${alert.message}:${alert.geofenceName ?? ''}',
           )
           .join('|');
 
@@ -277,17 +344,18 @@ Stream<List<DeviceAlert>> _pollBackendAlertsFallback(Ref ref) async* {
         final List<DeviceAlert> alerts = await ref
             .read(vercelConnectorServiceProvider)
             .getDeviceAlerts(deviceId, limit: 100);
+        final List<DeviceAlert> deduped = _dedupeAlerts(alerts);
 
-        final String signature = alerts
+        final String signature = deduped
             .map(
               (DeviceAlert alert) =>
-                  '${alert.type.name}:${alert.timestamp.toIso8601String()}:${alert.isEntering}:${alert.message}:${alert.geofenceName ?? ''}',
+                  '${alert.id ?? ''}:${alert.dedupeKey ?? ''}:${alert.checked}:${alert.type.name}:${alert.timestamp.toIso8601String()}:${alert.isEntering}:${alert.message}:${alert.geofenceName ?? ''}',
             )
             .join('|');
 
         if (signature != lastSignature) {
           lastSignature = signature;
-          yield alerts;
+          yield deduped;
         }
       }
     } catch (_) {
@@ -301,37 +369,25 @@ Stream<List<DeviceAlert>> _pollBackendAlertsFallback(Ref ref) async* {
   }
 }
 
-Stream<int> _pollFirestoreUnseenCount(Ref ref) async* {
-  bool disposed = false;
-  ref.onDispose(() {
-    disposed = true;
-  });
+List<DeviceAlert> _dedupeAlerts(List<DeviceAlert> alerts) {
+  final Map<String, DeviceAlert> byKey = <String, DeviceAlert>{};
 
-  const Duration pollInterval = Duration(seconds: 3);
-  int? lastCount;
-
-  while (!disposed) {
-    try {
-      final List<DeviceAlert> alerts = await ref.read(alertsHistoryProvider.future);
-      final DateTime? seenAt = ref.read(_alertsSeenAtProvider);
-
-      final int count = seenAt == null
-          ? alerts.length
-          : alerts
-                .where((DeviceAlert alert) => alert.timestamp.isAfter(seenAt))
-                .length;
-
-      if (count != lastCount) {
-        lastCount = count;
-        yield count;
-      }
-    } catch (_) {
-      if (lastCount != 0) {
-        lastCount = 0;
-        yield 0;
-      }
+  for (final DeviceAlert alert in alerts) {
+    final String key;
+    if ((alert.id ?? '').isNotEmpty) {
+      key = 'id:${alert.id}';
+    } else if ((alert.dedupeKey ?? '').isNotEmpty) {
+      key = 'dedupe:${alert.dedupeKey}';
+    } else {
+      key =
+          'sig:${alert.type.name}:${alert.timestamp.toIso8601String()}:${alert.isEntering}:${alert.message}:${alert.geofenceName ?? ''}';
     }
 
-    await Future<void>.delayed(pollInterval);
+    final DeviceAlert? existing = byKey[key];
+    if (existing == null || alert.timestamp.isAfter(existing.timestamp)) {
+      byKey[key] = alert;
+    }
   }
+
+  return byKey.values.toList(growable: false);
 }
