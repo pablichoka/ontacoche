@@ -27,13 +27,6 @@ Token registration endpoint:
 - required content type: `application/json`
 - payload must include `token` plus `device_id` or `user_id`
 
-Geofence poll endpoint (calculator fallback):
-
-- `POST /api/poll-geofence`
-- Vercel Cron is accepted via `x-vercel-cron: 1`
-- requires env vars `FLESPI_TOKEN` and `GEOFENCE_CALC_ID`
-- behavior: reads last calculator interval per assigned device and creates minimal geofence alerts in Firestore (`device_alerts`) when interval id changes.
-
 ## required environment variables
 
 - `WEBHOOK_BEARER_SECRET`: shared secret used by Flespi webhook authorization header.
@@ -100,7 +93,6 @@ npm run check
 4. add environment variables for Preview and Production.
 5. deploy.
 6. copy endpoint: `https://<project>.vercel.app/api/flespi-webhook`.
-7. optional: `vercel.json` includes a cron (`* * * * *`) to execute `POST /api/poll-geofence` every minute.
 
 ## test webhook with curl
 
@@ -117,23 +109,6 @@ curl -X POST "https://<project>.vercel.app/api/flespi-webhook" \
     "severity": "high",
     "ts": 1774137600000
   }'
-```
-
-## force geofence poll with curl
-
-```bash
-curl -X POST "https://<project>.vercel.app/api/poll-geofence" \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
-
-Cron-only example:
-
-```bash
-curl -X POST "https://<project>.vercel.app/api/poll-geofence" \
-  -H "x-vercel-cron: 1" \
-  -H "Content-Type: application/json" \
-  -d '{}'
 ```
 
 ## expected response
