@@ -182,6 +182,13 @@ function normalizeEvent(body) {
     'payload.report_code',
   ]));
 
+  const geofenceId = firstDefined(root, ['geofence_id', 'geofenceId', 'payload.geofence_id', 'payload.geofenceId'])
+    || firstDefined(payload, ['geofence_id', 'geofenceId'])
+    || null;
+
+  const logCode = normalizeReportCode(firstDefined(root, ['log_code', 'logCode', 'payload.log_code', 'payload.logCode']))
+    || null;
+
   const rawTopic = firstDefined(root, ['topic', 'event.topic', 'payload.topic']);
   const inferredEventType =
     firstDefined(root, ['event_type', 'type', 'event.type']) ||
@@ -219,6 +226,8 @@ function normalizeEvent(body) {
     userId: (firstDefined(root, ['user_id', 'userId']) || firstDefined(payload, ['user_id', 'userId']) || null),
     eventType: String(inferredEventType),
     reportCode,
+    geofenceId: geofenceId != null ? String(geofenceId) : null,
+    logCode,
     title: firstDefined(root, ['title', 'notification.title']) || firstDefined(payload, ['title']) || 'Alerta OntaCoche',
     body: firstDefined(root, ['body', 'message', 'notification.body']) || firstDefined(payload, ['body', 'message']) || 'Se detecto una alerta en el tracker',
     severity: firstDefined(root, ['severity']) || firstDefined(payload, ['severity']) || 'info',
@@ -355,6 +364,14 @@ function classifyEvent(event, config) {
     eventType.includes('geofence') ||
     intervalType.includes('geofence');
 
+  const geofenceConfigChange =
+    eventType.includes('geofence_update') ||
+    event.logCode === '0002' ||
+    event.logCode === '2' ||
+    event.geofenceId != null ||
+    topic.includes('/geofences/') ||
+    topic.includes('flespi/log/gw/geofences');
+
   const hasExplicitIntervalDirection =
     intervalType === 'enter' || intervalType === 'exit';
 
@@ -406,6 +423,12 @@ function classifyEvent(event, config) {
     title = 'Comunicacion activa';
     body = 'Tracker reportando posicion activa';
     severity = 'info';
+  } else if (geofenceConfigChange) {
+    title = 'Geocerca actualizada';
+    body = geofenceName
+      ? `Se actualizo la geocerca: ${geofenceName}`
+      : 'Se actualizo una geocerca';
+    severity = 'info';
   }
 
   return {
@@ -414,8 +437,9 @@ function classifyEvent(event, config) {
     geofenceEnter,
     geofenceExit,
     geofenceName: geofenceName ? String(geofenceName) : null,
+    geofenceConfigChange,
     communicationActive,
-    shouldPush,
+    shouldPush: shouldPush || geofenceConfigChange,
     title,
     body,
     severity,
@@ -539,6 +563,41 @@ async function persistEvent({ firestore, config, event, classification }) {
       alertCreated: !existing.exists,
       dedupeKey,
       eventKind: alertKind,
+      classification: effectiveClassification,
+    };
+  }
+
+  if (effectiveClassification.geofenceConfigChange) {
+    const geofenceChangeId = makeStableId([
+      'gfcfg',
+      String(event.geofenceId || event.eventId || event.deviceId || 'unknown'),
+      String(event.eventType || ''),
+      String(firstDefined(raw, ['timestamp', 'server.timestamp']) || event.ts || ''),
+    ].join('|'));
+
+    const alertRef = firestore.collection(config.alertsCollection).doc(geofenceChangeId);
+    const existing = await alertRef.get();
+
+    await alertRef.set({
+      ...snapshot,
+      geofence_id: event.geofenceId || null,
+      dedupe_key: geofenceChangeId,
+      event_id: event.eventId || null,
+      event_kind: 'geofence_config_change',
+      message: effectiveClassification.body,
+      severity: effectiveClassification.severity,
+      checked: existing.exists ? Boolean(existing.data()?.checked) : true,
+      checked_at: existing.exists ? (existing.data()?.checked_at || null) : new Date().toISOString(),
+      created_at: existing.exists
+        ? (existing.data()?.created_at || new Date().toISOString())
+        : new Date().toISOString(),
+      ...(existing.exists ? {} : { last_seen_at: new Date().toISOString() }),
+    }, { merge: true });
+
+    return {
+      alertCreated: !existing.exists,
+      dedupeKey: geofenceChangeId,
+      eventKind: 'geofence_config_change',
       classification: effectiveClassification,
     };
   }
