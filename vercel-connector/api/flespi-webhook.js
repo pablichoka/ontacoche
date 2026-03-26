@@ -454,54 +454,12 @@ async function persistEvent({ firestore, config, event, classification }) {
     .collection(config.deviceStateCollection)
     .doc(String(event.deviceId));
 
-  let previousState = null;
   let currentGeofenceStatus = null;
-  let previousGeofenceStatus = null;
 
   const currentRaw = firstDefined(raw, ['plugin.geofence.status', 'geofence.status']);
   currentGeofenceStatus = currentRaw == null ? null : asBoolean(currentRaw);
 
-  if (classification.communicationActive || currentGeofenceStatus != null) {
-    const existingState = await stateRef.get();
-    previousState = existingState.exists ? (existingState.data() || null) : null;
-
-    const previousRaw = previousState ? previousState.geofence_status : null;
-    previousGeofenceStatus = previousRaw == null ? null : asBoolean(previousRaw);
-  }
-
   let effectiveClassification = classification;
-  if (
-    !classification.geofenceAlarm &&
-    currentGeofenceStatus != null &&
-    previousGeofenceStatus != null &&
-    currentGeofenceStatus !== previousGeofenceStatus
-  ) {
-    const inferredEnter = currentGeofenceStatus === true;
-    const inferredExit = currentGeofenceStatus === false;
-    const inferredName =
-      classification.geofenceName ||
-      firstDefined(raw, ['plugin.geofence.name', 'geofence.name', 'geofence']) ||
-      (previousState ? previousState.geofence_name : null) ||
-      null;
-
-    effectiveClassification = {
-      ...classification,
-      geofenceAlarm: true,
-      geofenceEnter: inferredEnter,
-      geofenceExit: inferredExit,
-      geofenceName: inferredName,
-      shouldPush: true,
-      severity: 'high',
-      title: 'Alerta de geocerca',
-      body: inferredName
-        ? (inferredEnter
-          ? `Entrada en geocerca: ${inferredName}`
-          : `Salida de geocerca: ${inferredName}`)
-        : (inferredEnter
-          ? 'Entrada en geocerca detectada'
-          : 'Salida de geocerca detectada'),
-    };
-  }
 
   const snapshot = buildStateSnapshot(event, effectiveClassification);
 
@@ -547,7 +505,7 @@ async function persistEvent({ firestore, config, event, classification }) {
       created_at: existing.exists
         ? (existing.data()?.created_at || new Date().toISOString())
         : new Date().toISOString(),
-      last_seen_at: new Date().toISOString(),
+      ...(existing.exists ? {} : { last_seen_at: new Date().toISOString() }),
     }, { merge: true });
 
     return {

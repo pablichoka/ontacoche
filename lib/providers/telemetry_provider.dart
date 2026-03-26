@@ -102,14 +102,32 @@ final persistAlertUseCaseProvider =
       };
     });
 
+final alertsSeenCutoffProvider = StateProvider<DateTime?>((Ref ref) => null);
+
+final acknowledgeAlertsViewUseCaseProvider = Provider<void Function()>((
+  Ref ref,
+) {
+  return () {
+    ref.read(alertsSeenCutoffProvider.notifier).state = DateTime.now();
+  };
+});
+
 final alertsUnseenCountProvider = Provider<int>((Ref ref) {
   final AsyncValue<List<DeviceAlert>> alertsState = ref.watch(
     alertsHistoryProvider,
   );
+  final DateTime? seenCutoff = ref.watch(alertsSeenCutoffProvider);
 
   return alertsState.maybeWhen(
-    data: (List<DeviceAlert> alerts) =>
-        alerts.where((DeviceAlert alert) => !alert.checked).length,
+    data: (List<DeviceAlert> alerts) => alerts.where((DeviceAlert alert) {
+      if (alert.checked) {
+        return false;
+      }
+      if (seenCutoff == null) {
+        return true;
+      }
+      return alert.timestamp.isAfter(seenCutoff);
+    }).length,
     orElse: () => 0,
   );
 });

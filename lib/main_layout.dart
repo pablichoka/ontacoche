@@ -39,17 +39,17 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
       bottomNavigationBar: Consumer(
         builder: (context, ref, _) {
           final int count = ref.watch(alertsUnseenCountProvider);
-          final int displayedCount = _currentIndex == 2 ? 0 : count;
           return CustomBottomNavbar(
             selectedIndex: _currentIndex,
             onDestinationSelected: (int idx) {
               if (idx == 2) {
+                ref.read(acknowledgeAlertsViewUseCaseProvider)();
                 // mark alerts as seen when opening the alerts tab
                 ref.read(markAllAlertsSeenUseCaseProvider)().catchError((_) {});
               }
               _onDestinationSelected(idx);
             },
-            unseenAlertsCount: displayedCount,
+            unseenAlertsCount: count,
           );
         },
       ),

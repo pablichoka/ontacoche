@@ -20,6 +20,23 @@ async function getActiveTokens({ firestore, collectionName, deviceId, userId }) 
         tokenMap.set(token, doc.ref);
       }
     });
+
+    const numericDeviceId = Number.parseInt(String(deviceId), 10);
+    if (Number.isFinite(numericDeviceId)) {
+      const byNumericDeviceSnapshot = await firestore
+        .collection(collectionName)
+        .where('device_id', '==', numericDeviceId)
+        .where('active', '==', true)
+        .get();
+
+      byNumericDeviceSnapshot.forEach((doc) => {
+        const data = doc.data();
+        const token = data.token || doc.id;
+        if (token) {
+          tokenMap.set(token, doc.ref);
+        }
+      });
+    }
   }
 
   if (userId) {
