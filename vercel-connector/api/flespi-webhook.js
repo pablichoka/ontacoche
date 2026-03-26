@@ -458,12 +458,12 @@ async function persistEvent({ firestore, config, event, classification }) {
   let currentGeofenceStatus = null;
   let previousGeofenceStatus = null;
 
-  if (classification.communicationActive) {
+  const currentRaw = firstDefined(raw, ['plugin.geofence.status', 'geofence.status']);
+  currentGeofenceStatus = currentRaw == null ? null : asBoolean(currentRaw);
+
+  if (classification.communicationActive || currentGeofenceStatus != null) {
     const existingState = await stateRef.get();
     previousState = existingState.exists ? (existingState.data() || null) : null;
-
-    const currentRaw = firstDefined(raw, ['plugin.geofence.status', 'geofence.status']);
-    currentGeofenceStatus = currentRaw == null ? null : asBoolean(currentRaw);
 
     const previousRaw = previousState ? previousState.geofence_status : null;
     previousGeofenceStatus = previousRaw == null ? null : asBoolean(previousRaw);
@@ -471,7 +471,6 @@ async function persistEvent({ firestore, config, event, classification }) {
 
   let effectiveClassification = classification;
   if (
-    classification.communicationActive &&
     !classification.geofenceAlarm &&
     currentGeofenceStatus != null &&
     previousGeofenceStatus != null &&
@@ -506,7 +505,7 @@ async function persistEvent({ firestore, config, event, classification }) {
 
   const snapshot = buildStateSnapshot(event, effectiveClassification);
 
-  if (classification.communicationActive) {
+  if (classification.communicationActive || currentGeofenceStatus != null) {
     await stateRef.set(snapshot, { merge: true });
 
     if (config.storeStateHistory) {
