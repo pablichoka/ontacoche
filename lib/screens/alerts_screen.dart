@@ -9,21 +9,6 @@ class AlertsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.listen<AsyncValue<List<DeviceAlert>>>(alertsHistoryProvider, (
-      AsyncValue<List<DeviceAlert>>? previous,
-      AsyncValue<List<DeviceAlert>> next,
-    ) {
-      final bool hasUnchecked = next.maybeWhen(
-        data: (List<DeviceAlert> alerts) =>
-            alerts.any((DeviceAlert alert) => alert.checked),
-        orElse: () => false,
-      );
-
-      if (hasUnchecked) {
-        ref.read(markAllAlertsSeenUseCaseProvider)().catchError((_) {});
-      }
-    });
-
     final AsyncValue<List<DeviceAlert>> alertsState = ref.watch(
       alertsHistoryProvider,
     );

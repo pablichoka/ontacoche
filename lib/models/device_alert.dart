@@ -115,7 +115,8 @@ class DeviceAlert {
     }
 
     final DateTime timestamp = _timestampFromBackendJson(json);
-    final bool checked = _parseChecked(json['checked'] ?? json['seen']) ?? true;
+    final bool checked =
+        _parseChecked(json['checked'] ?? json['seen']) ?? false;
 
     final String? geofenceName = geofenceRaw?.toString();
     final String message =
@@ -196,7 +197,7 @@ class DeviceAlert {
           message: '¡Vibración detectada!',
           timestamp: ts,
           value: true,
-          checked: true,
+          checked: false,
         ),
       );
     }
@@ -208,7 +209,7 @@ class DeviceAlert {
           message: 'Batería baja detectada',
           timestamp: ts,
           value: true,
-          checked: true,
+          checked: false,
         ),
       );
     }
@@ -220,7 +221,7 @@ class DeviceAlert {
           message: 'Movimiento no autorizado detectado',
           timestamp: ts,
           value: true,
-          checked: true,
+          checked: false,
         ),
       );
     }
@@ -251,7 +252,7 @@ class DeviceAlert {
       value: type,
       geofenceName: geofenceName.isEmpty ? null : geofenceName,
       isEntering: isEntering,
-      checked: true,
+      checked: false,
     );
   }
 

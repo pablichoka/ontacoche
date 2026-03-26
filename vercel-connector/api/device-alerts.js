@@ -92,7 +92,7 @@ module.exports = async function handler(req, res) {
       const idSet = new Set(alertIds);
 
       const toMark = alerts.filter((item) => {
-        if (item.checked === false) {
+        if (item.checked === true) {
           return false;
         }
 
@@ -111,7 +111,7 @@ module.exports = async function handler(req, res) {
         for (const item of toMark) {
           const ref = firestore.collection(alertsCollection).doc(String(item.id));
           batch.update(ref, {
-            checked: false,
+            checked: true,
             checked_at: admin.firestore.FieldValue.serverTimestamp(),
           });
           ops += 1;

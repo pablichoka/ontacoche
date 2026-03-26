@@ -543,7 +543,7 @@ async function persistEvent({ firestore, config, event, classification }) {
       event_kind: alertKind,
       message: effectiveClassification.body,
       severity: effectiveClassification.severity,
-      checked: existing.exists ? Boolean(existing.data()?.checked) : true,
+      checked: existing.exists ? Boolean(existing.data()?.checked) : false,
       checked_at: existing.exists ? (existing.data()?.checked_at || null) : null,
       created_at: existing.exists
         ? (existing.data()?.created_at || new Date().toISOString())

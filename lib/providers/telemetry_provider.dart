@@ -109,7 +109,7 @@ final alertsUnseenCountProvider = Provider<int>((Ref ref) {
 
   return alertsState.maybeWhen(
     data: (List<DeviceAlert> alerts) =>
-        alerts.where((DeviceAlert alert) => alert.checked).length,
+        alerts.where((DeviceAlert alert) => !alert.checked).length,
     orElse: () => 0,
   );
 });
@@ -122,7 +122,7 @@ final markAllAlertsSeenUseCaseProvider = Provider<Future<void> Function()>((
       alertsHistoryProvider.future,
     );
     final List<DeviceAlert> unseen = alerts
-        .where((DeviceAlert alert) => alert.checked)
+        .where((DeviceAlert alert) => !alert.checked)
         .where((DeviceAlert alert) => (alert.id ?? '').isNotEmpty)
         .toList(growable: false);
 
@@ -160,7 +160,7 @@ final markAllAlertsSeenUseCaseProvider = Provider<Future<void> Function()>((
 
     for (final DeviceAlert alert in unseen) {
       batch.update(collection.doc(alert.id!), <String, Object?>{
-        'checked': false,
+        'checked': true,
         'checked_at': FieldValue.serverTimestamp(),
       });
       ops += 1;
