@@ -74,16 +74,37 @@ module.exports = async function handler(req, res) {
 
   try {
     const firestore = getFirestore();
-    const snapshot = await firestore
-      .collection(alertsCollection)
-      .orderBy('source_ts_ms', 'desc')
-      .limit(600)
-      .get();
+    // log access to help track read-heavy usage
+    console.info(JSON.stringify({
+      level: 'info',
+      message: 'device-alerts request',
+      method: req.method,
+      device_id: deviceId,
+      limit,
+      ts: new Date().toISOString(),
+    }));
+    // Prefer server-side filtering to avoid reading the whole collection.
+    // If device_id can be stored as number or string, query for both when numeric.
+    let query = null;
+    if (/^\d+$/.test(deviceId)) {
+      const numeric = Number(deviceId);
+      // use 'in' to match both numeric and string representations
+      query = firestore
+        .collection(alertsCollection)
+        .where('device_id', 'in', [deviceId, numeric])
+        .orderBy('source_ts_ms', 'desc')
+        .limit(limit);
+    } else {
+      query = firestore
+        .collection(alertsCollection)
+        .where('device_id', '==', deviceId)
+        .orderBy('source_ts_ms', 'desc')
+        .limit(limit);
+    }
 
-    const alerts = snapshot.docs
-      .map((doc) => ({ id: doc.id, ...doc.data() }))
-      .filter((item) => String(item.device_id || '') === deviceId)
-      .slice(0, limit);
+    const snapshot = await query.get();
+
+    const alerts = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
     if (req.method === 'POST') {
       const alertIds = Array.isArray(body.alert_ids)
