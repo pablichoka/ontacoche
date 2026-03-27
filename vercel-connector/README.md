@@ -27,6 +27,15 @@ Token registration endpoint:
 - required content type: `application/json`
 - payload must include `token` plus `device_id` or `user_id`
 
+Geofence CRUD endpoints (phase 1 circles):
+
+- `GET /api/geofences?device_id=<ident>`
+- `POST /api/geofences`
+- `PATCH /api/geofences/:id`
+- `DELETE /api/geofences/:id`
+- `POST /api/geofences/:id/assign-device`
+- required header: `Authorization: Bearer <APP_WRITE_BEARER>`
+
 ## required environment variables
 
 - `WEBHOOK_BEARER_SECRET`: shared secret used by Flespi webhook authorization header.
@@ -45,6 +54,10 @@ Token registration endpoint:
 - `STORE_STATE_HISTORY`: enable or disable storing 0200 history snapshots. default: `true`
 - `PUSH_ON_COMMUNICATION_ACTIVE`: send push for plain 0200 communication events. default: `false`
 - `LOG_LEVEL`: not enforced yet, default: `info`
+- `APP_WRITE_BEARER`: bearer used by app for geofence write/list endpoints
+- `FLESPI_TOKEN`: server-side flespi token used by geofence CRUD handlers
+- `FLESPI_GEOFENCE_CALC_ID`: calculator id that must include all managed geofences
+- `FLESPI_BASE_URL`: optional, defaults to `https://flespi.io`
 
 ## firestore token model
 
@@ -80,6 +93,7 @@ npm run check
 
 - `VERCEL_CONNECTOR_URL`: base URL for connector APIs, example `https://ontacoche.vercel.app`
 - `VERCEL_CONNECTOR_READ_BEARER`: optional bearer for `GET /api/device-state` if `APP_READ_BEARER` is set in Vercel
+- `VERCEL_CONNECTOR_WRITE_BEARER`: bearer for geofence CRUD endpoints (`APP_WRITE_BEARER` on Vercel)
 - `FCM_TOKEN_SYNC_URL`: should point to `https://<project>.vercel.app/api/register-token`
 - `FCM_TOKEN_SYNC_BEARER`: must match `FCM_TOKEN_SYNC_BEARER` env var configured in Vercel
 

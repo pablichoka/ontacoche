@@ -82,11 +82,22 @@ final initialDevicePositionProvider = FutureProvider<DevicePosition?>((
 final deviceGeofencesProvider = FutureProvider<List<Geofence>>((Ref ref) async {
   final FlespiApiService service = ref.watch(flespiApiServiceProvider);
   final String selector = ref.watch(deviceSelectorProvider);
+  final String deviceId = ref.watch(deviceIdentProvider).trim();
 
   try {
     return await service.getDeviceGeofences(selector);
   } catch (_) {
-    return const <Geofence>[];
+    if (deviceId.isEmpty) {
+      return const <Geofence>[];
+    }
+
+    try {
+      return await ref
+          .watch(vercelConnectorServiceProvider)
+          .getManagedGeofences(deviceId);
+    } catch (_) {
+      return const <Geofence>[];
+    }
   }
 });
 
@@ -151,16 +162,35 @@ final vercelConnectorReadBearerProvider = Provider<String>((Ref ref) {
   return (dotenv.env['VERCEL_CONNECTOR_READ_BEARER'] ?? '').trim();
 });
 
+final vercelConnectorWriteBearerProvider = Provider<String>((Ref ref) {
+  return (dotenv.env['VERCEL_CONNECTOR_WRITE_BEARER'] ?? '').trim();
+});
+
 final vercelConnectorServiceProvider = Provider<VercelConnectorService>((
   Ref ref,
 ) {
   final VercelConnectorService service = VercelConnectorService(
     baseUrl: ref.watch(vercelConnectorBaseUrlProvider),
     readBearer: ref.watch(vercelConnectorReadBearerProvider),
+    writeBearer: ref.watch(vercelConnectorWriteBearerProvider),
   );
 
   ref.onDispose(service.dispose);
   return service;
+});
+
+final managedGeofencesProvider = FutureProvider<List<Geofence>>((
+  Ref ref,
+) async {
+  final String deviceId = ref.watch(deviceIdentProvider).trim();
+  if (deviceId.isEmpty) {
+    return const <Geofence>[];
+  }
+
+  final VercelConnectorService service = ref.watch(
+    vercelConnectorServiceProvider,
+  );
+  return service.getManagedGeofences(deviceId);
 });
 
 final flespiRegisteredCatalogProvider = Provider<FlespiDeviceCatalog>((
