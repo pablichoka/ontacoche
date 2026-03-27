@@ -4,7 +4,7 @@ const {
   parseJsonBody,
   readCrudConfig,
   unauthorized,
-  updateCircleGeofence,
+  updateGeofence,
   validateWriteAccess,
 } = require('../../src/geofenceCrudService');
 
@@ -28,7 +28,7 @@ module.exports = async function handler(req, res) {
   try {
     if (req.method === 'PATCH' || req.method === 'PUT') {
       const body = parseJsonBody(req);
-      const updated = await updateCircleGeofence(config, geofenceId, body);
+      const updated = await updateGeofence(config, geofenceId, body);
       return res.status(200).json({ ok: true, ...updated });
     }
 

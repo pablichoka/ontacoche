@@ -27,6 +27,13 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
 
   LatLng? _draftCenter;
   bool _isPickingCenter = false;
+  // Polygon draft state
+  List<LatLng> _draftPath = <LatLng>[];
+  bool _isDrawingPolygon = false;
+  // editor type: circle (default) or polygon
+  GeofenceType _editorType = GeofenceType.circle;
+  int? _selectedVertexIndex;
+  bool _isMovingVertex = false;
   bool _isSaving = false;
   int? _editingGeofenceId;
 
@@ -47,34 +54,50 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
       _priorityController.text = '10';
       _draftCenter = null;
       _isPickingCenter = false;
+      _draftPath = <LatLng>[];
+      _isDrawingPolygon = false;
+      _editorType = GeofenceType.circle;
     });
   }
 
   void _loadForEdit(Geofence geofence) {
-    if (geofence.type != GeofenceType.circle ||
-        geofence.latitude == null ||
-        geofence.longitude == null ||
-        geofence.radius == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'En fase 1 solo se pueden editar geovallas circulares.',
-          ),
-        ),
-      );
-      return;
-    }
-
     setState(() {
       _editingGeofenceId = geofence.id;
       _nameController.text = geofence.name;
-      _radiusController.text = geofence.radius!.toStringAsFixed(3);
       _priorityController.text = geofence.priority.toString();
-      _draftCenter = LatLng(geofence.latitude!, geofence.longitude!);
       _isPickingCenter = false;
-    });
 
-    _mapController.move(_draftCenter!, 16);
+      if (geofence.type == GeofenceType.circle &&
+          geofence.latitude != null &&
+          geofence.longitude != null &&
+          geofence.radius != null) {
+        _editorType = GeofenceType.circle;
+        _radiusController.text = geofence.radius!.toStringAsFixed(3);
+        _draftCenter = LatLng(geofence.latitude!, geofence.longitude!);
+        _draftPath = <LatLng>[];
+        _isDrawingPolygon = false;
+        _mapController.move(_draftCenter!, 16);
+      } else if (geofence.type == GeofenceType.polygon &&
+          geofence.points.isNotEmpty) {
+        _editorType = GeofenceType.polygon;
+        _draftPath = geofence.points
+            .map((p) => LatLng(p.latitude, p.longitude))
+            .toList(growable: true);
+        _draftCenter = null;
+        _isDrawingPolygon = false;
+        _mapController.move(_draftPath.first, 16);
+      } else {
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          const SnackBar(
+            behavior: SnackBarBehavior.fixed,
+            content: Text('Tipo de geovalla no editable en este modo.'),
+          ),
+        );
+        _editingGeofenceId = null;
+      }
+    });
   }
 
   Future<void> _save() async {
@@ -92,7 +115,7 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
       _showError('El nombre es obligatorio.');
       return;
     }
-    if (_draftCenter == null) {
+    if (_editorType == GeofenceType.circle && _draftCenter == null) {
       _showError('Selecciona un centro en el mapa.');
       return;
     }
@@ -100,8 +123,13 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
       _showError('La prioridad debe ser un numero entero.');
       return;
     }
-    if (radiusKm == null || radiusKm <= 0) {
+    if (_editorType == GeofenceType.circle &&
+        (radiusKm == null || radiusKm <= 0)) {
       _showError('El radio debe ser un numero mayor que 0.');
+      return;
+    }
+    if (_editorType == GeofenceType.polygon && _draftPath.length < 3) {
+      _showError('Un polígono necesita al menos 3 puntos.');
       return;
     }
 
@@ -115,31 +143,57 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
 
     try {
       final service = ref.read(vercelConnectorServiceProvider);
-      if (_editingGeofenceId == null) {
-        await service.createCircleGeofence(
-          deviceId: deviceId,
-          name: name,
-          priority: priority,
-          latitude: _draftCenter!.latitude,
-          longitude: _draftCenter!.longitude,
-          radiusKm: radiusKm,
-        );
+      if (_editorType == GeofenceType.circle) {
+        if (_editingGeofenceId == null) {
+          await service.createCircleGeofence(
+            deviceId: deviceId,
+            name: name,
+            priority: priority,
+            latitude: _draftCenter!.latitude,
+            longitude: _draftCenter!.longitude,
+            radiusKm: radiusKm!,
+          );
+        } else {
+          await service.updateCircleGeofence(
+            geofenceId: _editingGeofenceId!,
+            name: name,
+            priority: priority,
+            latitude: _draftCenter!.latitude,
+            longitude: _draftCenter!.longitude,
+            radiusKm: radiusKm!,
+          );
+        }
       } else {
-        await service.updateCircleGeofence(
-          geofenceId: _editingGeofenceId!,
-          name: name,
-          priority: priority,
-          latitude: _draftCenter!.latitude,
-          longitude: _draftCenter!.longitude,
-          radiusKm: radiusKm,
-        );
+        final List<Map<String, double>> path = _draftPath
+            .map((LatLng p) => <String, double>{'lat': p.latitude, 'lon': p.longitude})
+            .toList(growable: false);
+        if (_editingGeofenceId == null) {
+          await service.createPolygonGeofence(
+            deviceId: deviceId,
+            name: name,
+            priority: priority,
+            path: path,
+          );
+        } else {
+          await service.updatePolygonGeofence(
+            geofenceId: _editingGeofenceId!,
+            name: name,
+            priority: priority,
+            path: path,
+          );
+        }
       }
 
       ref.invalidate(managedGeofencesProvider);
       ref.invalidate(deviceGeofencesProvider);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Geovalla guardada correctamente.')),
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          const SnackBar(
+            behavior: SnackBarBehavior.fixed,
+            content: Text('Geovalla guardada correctamente.'),
+          ),
         );
       }
       _startCreateMode();
@@ -186,9 +240,14 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
       ref.invalidate(managedGeofencesProvider);
       ref.invalidate(deviceGeofencesProvider);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Geovalla eliminada.')));
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          const SnackBar(
+            behavior: SnackBarBehavior.fixed,
+            content: Text('Geovalla eliminada.'),
+          ),
+        );
       }
       if (_editingGeofenceId == geofence.id) {
         _startCreateMode();
@@ -202,13 +261,20 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.fixed,
+        content: Text(message),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final MediaQueryData media = MediaQuery.of(context);
+    final bool keyboardOpen = media.viewInsets.bottom > 0;
     final geofencesState = ref.watch(managedGeofencesProvider);
     final initialPosition = ref.watch(initialTrackingProvider).position;
     final LatLng initialCenter = initialPosition != null
@@ -236,7 +302,7 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
             borderStrokeWidth: 2,
           ),
         )
-        .toList(growable: false);
+        .toList();
 
     final double? draftRadius = double.tryParse(
       _radiusController.text.trim().replaceAll(',', '.'),
@@ -262,87 +328,197 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
         icon: const Icon(Icons.add_rounded),
         label: const Text('Nueva geovalla'),
       ),
-      body: Column(
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: _buildEditorCard(),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SizedBox(
-              height: 260,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: FlutterMap(
-                  mapController: _mapController,
-                  options: MapOptions(
-                    initialCenter: initialCenter,
-                    initialZoom: 15,
-                    onTap: (TapPosition _, LatLng point) {
-                      if (!_isPickingCenter) {
-                        return;
-                      }
-                      setState(() {
-                        _draftCenter = point;
-                        _isPickingCenter = false;
-                      });
-                    },
-                  ),
-                  children: <Widget>[
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.ontacoche.app',
+      body: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: EdgeInsets.fromLTRB(0, 0, 0, media.viewInsets.bottom + 100),
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: _buildEditorCard(),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SizedBox(
+                height: keyboardOpen ? 180 : 260,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                      initialCenter: initialCenter,
+                      initialZoom: 15,
+                      onTap: (TapPosition _, LatLng point) {
+                        if (_isPickingCenter) {
+                          setState(() {
+                            _draftCenter = point;
+                            _isPickingCenter = false;
+                          });
+                          return;
+                        }
+
+                        if (_editorType == GeofenceType.polygon &&
+                            _isDrawingPolygon) {
+                          setState(() {
+                            _draftPath.add(point);
+                          });
+                          return;
+                        }
+                        // move selected vertex to tapped location
+                        if (_editorType == GeofenceType.polygon &&
+                            _isMovingVertex &&
+                            _selectedVertexIndex != null &&
+                            _selectedVertexIndex! >= 0 &&
+                            _selectedVertexIndex! < _draftPath.length) {
+                          setState(() {
+                            _draftPath[_selectedVertexIndex!] = point;
+                            _isMovingVertex = false;
+                            _selectedVertexIndex = null;
+                          });
+                          return;
+                        }
+                      },
                     ),
-                    CircleLayer(circles: circles),
-                    if (_draftCenter != null)
-                      MarkerLayer(
-                        markers: <Marker>[
-                          Marker(
-                            point: _draftCenter!,
-                            width: 36,
-                            height: 36,
-                            child: const Icon(
-                              Icons.place_rounded,
-                              size: 34,
-                              color: Colors.orange,
-                            ),
-                          ),
-                        ],
+                    children: <Widget>[
+                      TileLayer(
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.ontacoche.app',
                       ),
-                  ],
+                      CircleLayer(circles: circles),
+                      // existing polygon geofences
+                      if (geofences.isNotEmpty)
+                        PolygonLayer(
+                          polygons: geofences
+                              .where((g) => g.type == GeofenceType.polygon)
+                              .map((g) => Polygon(
+                                    points: g.points
+                                        .map((p) =>
+                                            LatLng(p.latitude, p.longitude))
+                                        .toList(growable: false),
+                                    color: Colors.blue.withValues(alpha: 0.12),
+                                    borderColor: Colors.blue,
+                                    borderStrokeWidth: 2,
+                                  ))
+                              .toList(growable: false),
+                        ),
+                      // draft polygon preview
+                      if (_draftPath.isNotEmpty)
+                        PolygonLayer(
+                          polygons: <Polygon>[
+                            Polygon(
+                              points: _draftPath,
+                              color: Colors.orange.withValues(alpha: 0.16),
+                              borderColor: Colors.orange,
+                              borderStrokeWidth: 2,
+                            ),
+                          ],
+                        ),
+                      if (_draftCenter != null)
+                        MarkerLayer(
+                          markers: <Marker>[
+                            Marker(
+                              point: _draftCenter!,
+                              width: 36,
+                              height: 36,
+                              child: const Icon(
+                                Icons.place_rounded,
+                                size: 34,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ],
+                        ),
+                      if (_draftPath.isNotEmpty)
+                        MarkerLayer(
+                          markers: _draftPath
+                              .asMap()
+                              .entries
+                              .map(
+                                (MapEntry<int, LatLng> e) {
+                                  final int idx = e.key;
+                                  final LatLng p = e.value;
+                                  final bool selected = _selectedVertexIndex == idx;
+                                  return Marker(
+                                    point: p,
+                                    width: 28,
+                                    height: 28,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          _selectedVertexIndex = idx;
+                                        });
+                                      },
+                                      onLongPress: () {
+                                        setState(() {
+                                          _draftPath.removeAt(idx);
+                                          if (_selectedVertexIndex != null) {
+                                            _selectedVertexIndex = null;
+                                          }
+                                        });
+                                      },
+                                      child: CircleAvatar(
+                                        radius: selected ? 14 : 12,
+                                        backgroundColor: selected
+                                            ? Colors.orange
+                                            : Colors.orange.withOpacity(0.9),
+                                        child: Text(
+                                          '${idx + 1}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              )
+                              .toList(growable: false),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: geofencesState.when(
-              data: (List<Geofence> data) {
-                if (data.isEmpty) {
-                  return const Center(
-                    child: Text('No hay geovallas asignadas todavia.'),
-                  );
-                }
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+              child: geofencesState.when(
+                data: (List<Geofence> data) {
+                  if (data.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.only(top: 32),
+                      child: Text('No hay geovallas asignadas todavia.'),
+                    );
+                  }
 
-                return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                  itemCount: data.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (BuildContext context, int index) {
-                    final Geofence geofence = data[index];
-                    return _buildGeofenceTile(geofence);
-                  },
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (Object error, StackTrace _) {
-                return Center(child: Text('Error cargando geovallas: $error'));
-              },
+                  return ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: data.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (BuildContext context, int index) {
+                      final Geofence geofence = data[index];
+                      return _buildGeofenceTile(geofence);
+                    },
+                  );
+                },
+                loading: () => const Padding(
+                  padding: EdgeInsets.only(top: 24),
+                  child: CircularProgressIndicator(),
+                ),
+                error: (Object error, StackTrace _) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 24),
+                    child: Text('Error cargando geovallas: $error'),
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -366,8 +542,12 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
         children: <Widget>[
           Text(
             _editingGeofenceId == null
-                ? 'Crear geovalla circular'
-                : 'Editar geovalla circular',
+                ? (_editorType == GeofenceType.circle
+                    ? 'Crear geovalla circular'
+                    : 'Crear geovalla poligonal')
+                : (_editorType == GeofenceType.circle
+                    ? 'Editar geovalla circular'
+                    : 'Editar geovalla poligonal'),
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 10),
@@ -392,36 +572,108 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: _radiusController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Radio (km)',
-                    border: OutlineInputBorder(),
+              if (_editorType == GeofenceType.circle)
+                Expanded(
+                  child: TextField(
+                    controller: _radiusController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Radio (km)',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                 ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ToggleButtons(
+            isSelected: <bool>[
+              _editorType == GeofenceType.circle,
+              _editorType == GeofenceType.polygon,
+            ],
+            onPressed: (int idx) {
+              setState(() {
+                _editorType = idx == 0
+                    ? GeofenceType.circle
+                    : GeofenceType.polygon;
+                // reset incompatible draft data
+                if (_editorType == GeofenceType.circle) {
+                  _draftPath = <LatLng>[];
+                  _isDrawingPolygon = false;
+                } else {
+                  _draftCenter = null;
+                }
+              });
+            },
+            children: const <Widget>[
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Text('Círculo'),
+              ),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Text('Polígono'),
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          if (_editorType == GeofenceType.polygon)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _isDrawingPolygon = !_isDrawingPolygon;
+                    });
+                  },
+                  icon: const Icon(Icons.edit_location_rounded),
+                  label: Text(_isDrawingPolygon ? 'Detener' : 'Dibujar puntos'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _draftPath.isEmpty
+                      ? null
+                      : () {
+                          setState(() {
+                            _draftPath.removeLast();
+                          });
+                        },
+                  icon: const Icon(Icons.undo_rounded),
+                  label: const Text('Deshacer'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _draftPath.isEmpty
+                      ? null
+                      : () {
+                          setState(() {
+                            _draftPath = <LatLng>[];
+                          });
+                        },
+                  icon: const Icon(Icons.clear_rounded),
+                  label: const Text('Limpiar'),
+                ),
+              ],
+            ),
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: <Widget>[
-              OutlinedButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _isPickingCenter = true;
-                  });
-                },
-                icon: const Icon(Icons.touch_app_rounded),
-                label: Text(
-                  _isPickingCenter ? 'Toca el mapa...' : 'Seleccionar centro',
+              if (_editorType == GeofenceType.circle)
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _isPickingCenter = true;
+                    });
+                  },
+                  icon: const Icon(Icons.touch_app_rounded),
+                  label: Text(
+                    _isPickingCenter ? 'Toca el mapa...' : 'Seleccionar centro',
+                  ),
                 ),
-              ),
               FilledButton.icon(
                 onPressed: _isSaving ? null : _save,
                 icon: _isSaving
@@ -432,7 +684,9 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                       )
                     : const Icon(Icons.save_rounded),
                 label: Text(
-                  _editingGeofenceId == null ? 'Crear' : 'Guardar cambios',
+                  _editingGeofenceId == null
+                      ? 'Crear'
+                      : 'Guardar cambios',
                 ),
               ),
             ],

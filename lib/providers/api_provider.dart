@@ -163,7 +163,13 @@ final vercelConnectorReadBearerProvider = Provider<String>((Ref ref) {
 });
 
 final vercelConnectorWriteBearerProvider = Provider<String>((Ref ref) {
-  return (dotenv.env['VERCEL_CONNECTOR_WRITE_BEARER'] ?? '').trim();
+  final String writeBearer = (dotenv.env['VERCEL_CONNECTOR_WRITE_BEARER'] ?? '')
+      .trim();
+  if (writeBearer.isNotEmpty) {
+    return writeBearer;
+  }
+
+  return ref.watch(vercelConnectorReadBearerProvider);
 });
 
 final vercelConnectorServiceProvider = Provider<VercelConnectorService>((

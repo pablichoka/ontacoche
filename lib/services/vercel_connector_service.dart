@@ -34,6 +34,8 @@ class VercelConnectorService {
     };
     if (writeBearer.isNotEmpty) {
       headers['Authorization'] = 'Bearer $writeBearer';
+    } else if (readBearer.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $readBearer';
     }
     return headers;
   }
@@ -240,6 +242,44 @@ class VercelConnectorService {
     return Geofence.fromJson(Map<String, dynamic>.from(geofenceRaw));
   }
 
+  Future<Geofence> createPolygonGeofence({
+    required String deviceId,
+    required String name,
+    required int priority,
+    required List<Map<String, double>> path,
+  }) async {
+    final Uri uri = Uri.parse('$baseUrl/api/geofences');
+    final http.Response response = await _client.post(
+      uri,
+      headers: _writeHeaders(),
+      body: jsonEncode(<String, dynamic>{
+        'device_id': deviceId,
+        'name': name,
+        'priority': priority,
+        'geometry': <String, dynamic>{'type': 'polygon', 'path': path},
+      }),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw VercelConnectorException(
+        statusCode: response.statusCode,
+        message: response.body,
+      );
+    }
+
+    final Map<String, dynamic> payload =
+        jsonDecode(response.body) as Map<String, dynamic>;
+    final Object? geofenceRaw = payload['geofence'];
+    if (geofenceRaw is! Map) {
+      throw const VercelConnectorException(
+        statusCode: 500,
+        message: 'invalid geofence response',
+      );
+    }
+
+    return Geofence.fromJson(Map<String, dynamic>.from(geofenceRaw));
+  }
+
   Future<Geofence> updateCircleGeofence({
     required int geofenceId,
     required String name,
@@ -260,6 +300,43 @@ class VercelConnectorService {
           'center': <String, dynamic>{'lat': latitude, 'lon': longitude},
           'radius': radiusKm,
         },
+      }),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw VercelConnectorException(
+        statusCode: response.statusCode,
+        message: response.body,
+      );
+    }
+
+    final Map<String, dynamic> payload =
+        jsonDecode(response.body) as Map<String, dynamic>;
+    final Object? geofenceRaw = payload['geofence'];
+    if (geofenceRaw is! Map) {
+      throw const VercelConnectorException(
+        statusCode: 500,
+        message: 'invalid geofence response',
+      );
+    }
+
+    return Geofence.fromJson(Map<String, dynamic>.from(geofenceRaw));
+  }
+
+  Future<Geofence> updatePolygonGeofence({
+    required int geofenceId,
+    required String name,
+    required int priority,
+    required List<Map<String, double>> path,
+  }) async {
+    final Uri uri = Uri.parse('$baseUrl/api/geofences/$geofenceId');
+    final http.Response response = await _client.patch(
+      uri,
+      headers: _writeHeaders(),
+      body: jsonEncode(<String, dynamic>{
+        'name': name,
+        'priority': priority,
+        'geometry': <String, dynamic>{'type': 'polygon', 'path': path},
       }),
     );
 

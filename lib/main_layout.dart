@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'screens/history_screen.dart';
 import 'screens/map_screen.dart';
 import 'screens/alerts_screen.dart';
+import 'screens/geofence_manager_screen.dart';
 import 'screens/settings_screen.dart';
 import 'widgets/custom_bottom_navbar.dart';
 import 'providers/telemetry_provider.dart';
@@ -23,6 +24,7 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
     MapScreen(),
     HistoryScreen(),
     AlertsScreen(),
+    GeofenceManagerScreen(),
     SettingsScreen(),
   ];
 

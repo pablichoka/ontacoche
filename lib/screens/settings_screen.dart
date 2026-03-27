@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/api_provider.dart';
-import 'geofence_manager_screen.dart';
 import '../utils/scroll_utils.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -218,26 +217,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                 ),
                               ),
                       ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildSettingItem(
-                    title: 'Geovallas',
-                    subtitle:
-                        'Crea, edita y elimina geovallas circulares desde el mapa',
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: FilledButton.icon(
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const GeofenceManagerScreen(),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.map_outlined),
-                        label: const Text('Gestionar geovallas'),
-                      ),
                     ),
                   ),
                   const SizedBox(height: 32),

@@ -28,13 +28,17 @@ class CustomBottomNavbar extends StatelessWidget {
         selectedIcon: Icons.notifications_rounded,
       ),
       const _NavItemData(
+        icon: Icons.fence_outlined,
+        selectedIcon: Icons.fence_rounded,
+      ),
+      const _NavItemData(
         icon: Icons.settings_outlined,
         selectedIcon: Icons.settings_rounded,
       ),
     ];
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 72),
+      padding: const EdgeInsets.fromLTRB(12, 24, 12, 72),
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Material(
@@ -43,7 +47,7 @@ class CustomBottomNavbar extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
           shadowColor: Colors.black.withValues(alpha: 0.18),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: List<Widget>.generate(items.length, (int index) {
@@ -59,7 +63,7 @@ class CustomBottomNavbar extends StatelessWidget {
 
                 return Padding(
                   padding: EdgeInsets.only(
-                    right: index == items.length - 1 ? 0 : 8,
+                    right: index == items.length - 1 ? 0 : 6,
                   ),
                   child: _NavbarButton(
                     isSelected: isSelected,
@@ -101,7 +105,7 @@ class _NavbarButton extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         customBorder: const CircleBorder(),
-        child: SizedBox(width: 52, height: 52, child: Center(child: child)),
+        child: SizedBox(width: 46, height: 46, child: Center(child: child)),
       ),
     );
   }

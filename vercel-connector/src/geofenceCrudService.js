@@ -97,6 +97,39 @@ function normalizeCircleGeometry(input) {
   };
 }
 
+function normalizePolygonGeometry(input) {
+  if (!input || typeof input !== 'object') {
+    throw createValidationError('geometry is required');
+  }
+
+  const type = String(input.type || '').trim().toLowerCase();
+  if (type !== 'polygon') {
+    throw createValidationError('geometry.type must be polygon');
+  }
+
+  const rawPath = Array.isArray(input.path) ? input.path : Array.isArray(input.points) ? input.points : null;
+  if (!rawPath || rawPath.length < 3) {
+    throw createValidationError('polygon must have at least 3 points');
+  }
+
+  const path = rawPath.map((p) => {
+    const lat = Number(p.lat);
+    const lon = Number(p.lon);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      throw createValidationError('geometry.path.lat is invalid');
+    }
+    if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
+      throw createValidationError('geometry.path.lon is invalid');
+    }
+    return { lat, lon };
+  });
+
+  return {
+    type: 'polygon',
+    path,
+  };
+}
+
 function normalizePriority(value) {
   const priority = Number(value);
   if (!Number.isInteger(priority) || priority < 0 || priority > 100) {
@@ -262,6 +295,58 @@ async function createCircleGeofence(config, input) {
   };
 }
 
+async function createGeofence(config, input) {
+  const name = String(input.name || '').trim();
+  if (!name) {
+    throw createValidationError('name is required');
+  }
+
+  const priority = normalizePriority(input.priority);
+
+  let geometry;
+  if (!input.geometry || typeof input.geometry !== 'object') {
+    throw createValidationError('geometry is required');
+  }
+
+  const gtype = String(input.geometry.type || '').trim().toLowerCase();
+  if (gtype === 'circle') {
+    geometry = normalizeCircleGeometry(input.geometry);
+  } else if (gtype === 'polygon') {
+    geometry = normalizePolygonGeometry(input.geometry);
+  } else {
+    throw createValidationError('unsupported geometry type');
+  }
+
+  const deviceSelector = normalizeDeviceSelector(input, config);
+
+  await ensureUniquePriority(config, priority);
+
+  const created = await flespiRequest(
+    config,
+    'POST',
+    '/gw/geofences?fields=id,name,enabled,priority,geometry',
+    [{ name, priority, enabled: true, geometry }],
+  );
+
+  const geofence = Array.isArray(created.result) && created.result.length > 0
+    ? created.result[0]
+    : null;
+
+  if (!geofence || !Number.isInteger(Number(geofence.id))) {
+    throw new Error('flespi did not return created geofence id');
+  }
+
+  const geofenceId = Number(geofence.id);
+  await ensureCalcAssignment(config, geofenceId);
+  await ensureDeviceAssignment(config, geofenceId, deviceSelector);
+
+  return {
+    geofence,
+    calc_id: config.calcId,
+    device_selector: deviceSelector,
+  };
+}
+
 async function updateCircleGeofence(config, geofenceId, input) {
   const id = Number(geofenceId);
   if (!Number.isInteger(id) || id <= 0) {
@@ -285,6 +370,61 @@ async function updateCircleGeofence(config, geofenceId, input) {
 
   if (input.geometry != null) {
     patch.geometry = normalizeCircleGeometry(input.geometry);
+  }
+
+  if (Object.keys(patch).length === 0) {
+    throw createValidationError('nothing to update');
+  }
+
+  const updated = await flespiRequest(
+    config,
+    'PUT',
+    `/gw/geofences/${id}?fields=id,name,enabled,priority,geometry`,
+    patch,
+  );
+
+  await ensureCalcAssignment(config, id);
+
+  const geofence = Array.isArray(updated.result) && updated.result.length > 0
+    ? updated.result[0]
+    : null;
+
+  return {
+    geofence,
+    calc_id: config.calcId,
+  };
+}
+
+async function updateGeofence(config, geofenceId, input) {
+  const id = Number(geofenceId);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw createValidationError('invalid geofence id');
+  }
+
+  const patch = {};
+  if (input.name != null) {
+    const name = String(input.name || '').trim();
+    if (!name) {
+      throw createValidationError('name cannot be empty');
+    }
+    patch.name = name;
+  }
+
+  if (input.priority != null) {
+    const priority = normalizePriority(input.priority);
+    await ensureUniquePriority(config, priority, id);
+    patch.priority = priority;
+  }
+
+  if (input.geometry != null) {
+    const gtype = String(input.geometry.type || '').trim().toLowerCase();
+    if (gtype === 'circle') {
+      patch.geometry = normalizeCircleGeometry(input.geometry);
+    } else if (gtype === 'polygon') {
+      patch.geometry = normalizePolygonGeometry(input.geometry);
+    } else {
+      throw createValidationError('unsupported geometry type');
+    }
   }
 
   if (Object.keys(patch).length === 0) {
@@ -364,6 +504,7 @@ function handleApiError(res, error) {
 module.exports = {
   assignGeofenceToDevice,
   createCircleGeofence,
+  createGeofence,
   deleteGeofence,
   handleApiError,
   listDeviceGeofences,
@@ -371,5 +512,6 @@ module.exports = {
   readCrudConfig,
   unauthorized,
   updateCircleGeofence,
+  updateGeofence,
   validateWriteAccess,
 };

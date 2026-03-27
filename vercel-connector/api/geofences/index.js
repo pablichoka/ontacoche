@@ -1,5 +1,5 @@
 const {
-  createCircleGeofence,
+  createGeofence,
   handleApiError,
   listDeviceGeofences,
   parseJsonBody,
@@ -35,7 +35,7 @@ module.exports = async function handler(req, res) {
 
     if (req.method === 'POST') {
       const body = parseJsonBody(req);
-      const created = await createCircleGeofence(config, body);
+      const created = await createGeofence(config, body);
       return res.status(201).json({ ok: true, ...created });
     }
 
