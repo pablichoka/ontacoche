@@ -56,11 +56,32 @@ module.exports = async function handler(req, res) {
     } catch(e) {}
 
     if (!response.ok) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'flespi update device responded with error',
+        selector,
+        requestBody: { name },
+        status: response.status,
+        responseText: responseText,
+        parsed: responseData,
+        ts: new Date().toISOString(),
+      }));
+
       return res.status(response.status).json({
         ok: false,
         error: responseData.error || responseText
       });
     }
+
+    // log success for auditing
+    console.info(JSON.stringify({
+      level: 'info',
+      message: 'flespi update device succeeded',
+      selector,
+      requestBody: { name },
+      response: responseData,
+      ts: new Date().toISOString(),
+    }));
 
     return res.status(200).json(responseData);
   } catch (error) {
