@@ -78,7 +78,8 @@ function normalizeCircleGeometry(input) {
   const center = input.center && typeof input.center === 'object' ? input.center : {};
   const lat = Number(center.lat);
   const lon = Number(center.lon);
-  const radius = Number(input.radius);
+  // input.radius is expected in KILOMETERS from the app; pass through as km
+  const radiusKm = Number(input.radius);
 
   if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
     throw createValidationError('geometry.center.lat is invalid');
@@ -86,10 +87,6 @@ function normalizeCircleGeometry(input) {
   if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
     throw createValidationError('geometry.center.lon is invalid');
   }
-  // input.radius is expected in METERS from the app; convert to kilometers
-  const radiusMeters = radius;
-  const radiusKm = Number(radiusMeters);
-
   if (!Number.isFinite(radiusKm) || radiusKm < 0.001 || radiusKm > 1000) {
     throw createValidationError('geometry.radius is invalid');
   }

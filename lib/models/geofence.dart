@@ -38,7 +38,8 @@ class Geofence {
     GeofenceType type = GeofenceType.circle;
     double? lat;
     double? lon;
-    double? radius;
+    double? radius; // final radius in meters
+    double? radiusKm;
     List<GeofencePoint> points = const <GeofencePoint>[];
 
     if (typeStr == 'circle') {
@@ -46,7 +47,14 @@ class Geofence {
       final center = Map<String, dynamic>.from(geometry['center'] as Map);
       lat = center['lat']?.toDouble();
       lon = center['lon']?.toDouble();
-      radius = geometry['radius']?.toDouble();
+      if (geometry['radius'] is num) {
+        radiusKm = (geometry['radius'] as num).toDouble();
+      } else if (geometry['radius'] is String) {
+        radiusKm = double.tryParse(geometry['radius'] as String);
+      } else {
+        radiusKm = null;
+      }
+      radius = radiusKm != null ? radiusKm * 1000.0 : null;
     } else if (typeStr == 'polygon') {
       type = GeofenceType.polygon;
       final List<dynamic> rawPoints =
@@ -71,7 +79,7 @@ class Geofence {
       priority: (json['priority'] as num?)?.toInt() ?? 0,
       latitude: lat,
       longitude: lon,
-      radius: radius,
+      radius: radius, // in m
       points: points,
     );
   }

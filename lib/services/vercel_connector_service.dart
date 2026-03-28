@@ -314,8 +314,8 @@ class VercelConnectorService {
         'geometry': <String, dynamic>{
           'type': 'circle',
           'center': <String, dynamic>{'lat': latitude, 'lon': longitude},
-          // send radius in meters; backend converts to km for Flespi
-          'radius': radiusMeters,
+          // send radius in kilometers (backend / Flespi expects km)
+          'radius': radiusMeters / 1000.0,
         },
       }),
     );
@@ -393,8 +393,8 @@ class VercelConnectorService {
         'geometry': <String, dynamic>{
           'type': 'circle',
           'center': <String, dynamic>{'lat': latitude, 'lon': longitude},
-          // send radius in meters; backend will not accept priority changes
-          'radius': radiusMeters,
+          // send radius in kilometers (backend / Flespi expects km)
+          'radius': radiusMeters / 1000.0,
         },
       }),
     );

@@ -134,7 +134,6 @@ class _StatusCard extends ConsumerWidget {
     final realtimeStatus = ref.watch(realtimeTrackingStatusProvider);
     final positionState = ref.watch(positionStreamProvider);
     final historyState = ref.watch(telemetryHistoryProvider);
-    final telemetryCountState = ref.watch(telemetryCountProvider);
     final deviceDetailsState = ref.watch(deviceDetailsProvider);
 
     final rawStatePayload = ref.watch(deviceRawStateProvider);
@@ -144,7 +143,9 @@ class _StatusCard extends ConsumerWidget {
       // Prefer device.name from device_last_state: state.device.name
       if (rawPayload != null) {
         final state = rawPayload['state'];
-        if (state is Map && state['device'] is Map && state['device']['name'] != null) {
+        if (state is Map &&
+            state['device'] is Map &&
+            state['device']['name'] != null) {
           return state['device']['name'].toString();
         }
       }
@@ -259,16 +260,6 @@ class _StatusCard extends ConsumerWidget {
     if (lastTime != null) {
       lastPositionText = Parsers.formatRelativeTimestamp(lastTime);
     }
-
-    final String sourceText = switch (initialTrackingState.source) {
-      InitialTrackingSource.fallback => 'Sin datos persistidos',
-      InitialTrackingSource.persisted => 'Cargado desde la app',
-      InitialTrackingSource.remote => 'Actualizado desde backend',
-    };
-    final String storedCountText = telemetryCountState.maybeWhen(
-      data: (count) => '$count posiciones guardadas',
-      orElse: () => 'Calculando historial...',
-    );
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
@@ -408,18 +399,6 @@ class _StatusCard extends ConsumerWidget {
             label: 'Última posición',
             value: lastPositionText,
           ),
-          const SizedBox(height: 12),
-          _InfoRow(
-            icon: Icons.cloud_done_rounded,
-            label: 'Estado inicial',
-            value: sourceText,
-          ),
-          const SizedBox(height: 12),
-          _InfoRow(
-            icon: Icons.route_rounded,
-            label: 'Historial local',
-            value: storedCountText,
-          ),
         ],
       ),
     );
@@ -508,4 +487,3 @@ class _InfoRow extends StatelessWidget {
     );
   }
 }
-
