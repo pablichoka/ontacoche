@@ -137,10 +137,24 @@ class _StatusCard extends ConsumerWidget {
     final telemetryCountState = ref.watch(telemetryCountProvider);
     final deviceDetailsState = ref.watch(deviceDetailsProvider);
 
-    final String deviceName = deviceDetailsState.maybeWhen(
-      data: (d) => (d['name'] ?? 'Tracker').toString(),
-      orElse: () => 'Tracker',
-    );
+    final rawStatePayload = ref.watch(deviceRawStateProvider);
+    final Map<String, dynamic>? rawPayload = rawStatePayload.valueOrNull;
+
+    final String deviceName = (() {
+      // Prefer device.name from device_last_state: state.device.name
+      if (rawPayload != null) {
+        final state = rawPayload['state'];
+        if (state is Map && state['device'] is Map && state['device']['name'] != null) {
+          return state['device']['name'].toString();
+        }
+      }
+
+      // fallback to previously used details provider
+      return deviceDetailsState.maybeWhen(
+        data: (d) => (d['name'] ?? 'Tracker').toString(),
+        orElse: () => 'Tracker',
+      );
+    })();
 
     final position = positionState.valueOrNull ?? initialTrackingState.position;
 

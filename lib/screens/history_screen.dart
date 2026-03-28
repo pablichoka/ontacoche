@@ -5,6 +5,7 @@ import '../models/trip.dart';
 import '../providers/trip_provider.dart';
 import '../theme/app_colors.dart';
 import '../utils/parsers.dart';
+import '../widgets/expressive_indicator.dart';
 import 'trip_playback_screen.dart';
 
 class HistoryScreen extends ConsumerWidget {
@@ -42,7 +43,7 @@ class HistoryScreen extends ConsumerWidget {
             ),
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const Center(child: ExpressiveIndicator(size: 40, strokeWidth: 5,)),
         error: (Object error, StackTrace stackTrace) => Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),

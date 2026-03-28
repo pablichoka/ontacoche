@@ -523,16 +523,24 @@ async function persistEvent({ firestore, config, event, classification }) {
   const writeSnapshot = { ...snapshot };
   delete writeSnapshot.source_ts_ms;
   delete writeSnapshot.updated_at;
-
-  // Only persist state when the event is a flespi-origin '0200' report.
   // Detect flespi-origin by presence of server.timestamp, channel.id or a topic containing 'flespi'.
   const serverTs = firstDefined(raw, ['server.timestamp', 'server_ts', 'timestamp']);
   const rawTopic = firstDefined(raw, ['topic', 'event.topic', 'payload.topic']) || '';
   const channelId = firstDefined(raw, ['channel.id', 'payload.channel.id']);
   const isFromFlespi = serverTs != null || channelId != null || (typeof rawTopic === 'string' && rawTopic.toLowerCase().includes('flespi'));
 
+  // Only persist state when the event is a flespi-origin '0200' report.
+  // For non-0200/non-flespi messages we skip state/history writes but still allow
+  // alert creation (e.g., geofence enter/exit interval events).
+  let skipStateWrite = false;
   if (String(event.reportCode || '') !== '0200' || !isFromFlespi) {
-    // Do not write any state/history for non-0200 or non-flespi messages.
+    skipStateWrite = true;
+  }
+
+  // If we're skipping state writes because the message isn't a flespi 0200,
+  // only proceed further when the classification is explicitly a geofence
+  // alarm. Other non-0200 events should not create alerts.
+  if (skipStateWrite && !classification.geofenceAlarm) {
     return { alertCreated: false, dedupeKey: null, classification: effectiveClassification, skippedStateWrite: true };
   }
 
@@ -556,7 +564,6 @@ async function persistEvent({ firestore, config, event, classification }) {
     }
   }
 
-  let skipStateWrite = false;
   if (existingStateDoc && existingStateDoc.exists) {
     try {
       const existingData = existingStateDoc.data() || {};

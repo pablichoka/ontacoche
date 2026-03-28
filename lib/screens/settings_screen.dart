@@ -72,12 +72,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (mounted) FocusScope.of(context).unfocus();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            behavior: SnackBarBehavior.fixed,
-            content: Text('Nombre actualizado correctamente'),
+        // show a simple dialog informing about visibility delay
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Nombre actualizado'),
+            content: const Text(
+              'El nombre se ha actualizado en el servidor. ' 
+              'Puede que no veas el cambio hasta que reinicies la app o el tracker envíe nueva actividad.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
           ),
         );
+
         ref.invalidate(deviceDetailsProvider);
         _isNameInitialized = false;
       }
