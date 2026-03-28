@@ -1,5 +1,6 @@
 const { readConfig } = require('../src/config');
 const { getFirestore, getMessaging } = require('../src/firebaseAdmin');
+const admin = require('firebase-admin');
 const {
   deactivateInvalidTokens,
   getActiveTokens,
@@ -520,12 +521,16 @@ async function persistEvent({ firestore, config, event, classification }) {
   let effectiveClassification = classification;
 
   const snapshot = buildStateSnapshot(event, effectiveClassification, config);
+  // create a write-safe copy that strips internal timestamp fields
+  const writeSnapshot = { ...snapshot };
+  delete writeSnapshot.source_ts_ms;
+  delete writeSnapshot.updated_at;
 
     // overwrite last state document to ensure `device.id` nested shape
-    await stateRef.set(snapshot);
+    await stateRef.set(writeSnapshot);
 
     if (config.storeStateHistory) {
-      await firestore.collection(config.stateHistoryCollection).add(snapshot);
+      await firestore.collection(config.stateHistoryCollection).add(writeSnapshot);
     }
 
   if (effectiveClassification.vibrationAlarm || effectiveClassification.geofenceAlarm) {
@@ -569,9 +574,9 @@ async function persistEvent({ firestore, config, event, classification }) {
     const existing = await alertRef.get();
 
     // Build a compact alert document to store only essential fields
+    // Build a compact alert document to store only essential fields
     const alertDocBase = {
       source_ts: snapshot.source_ts,
-      source_ts_ms: snapshot.source_ts_ms,
       device: { id: String(event.deviceId), name: snapshot.device?.name || null },
       dedupe_key: dedupeKey,
       event_id: event.eventId || null,
@@ -579,10 +584,6 @@ async function persistEvent({ firestore, config, event, classification }) {
       severity: effectiveClassification.severity,
       checked: existing.exists ? Boolean(existing.data()?.checked) : false,
       checked_at: existing.exists ? (existing.data()?.checked_at || null) : null,
-      created_at: existing.exists
-        ? (existing.data()?.created_at || new Date().toISOString())
-        : new Date().toISOString(),
-      last_seen_at: new Date().toISOString(),
     };
 
     const alertDoc = effectiveClassification.vibrationAlarm
@@ -601,6 +602,16 @@ async function persistEvent({ firestore, config, event, classification }) {
       };
 
     await alertRef.set(alertDoc, { merge: true });
+    // ensure forbidden fields are removed if they existed previously
+    try {
+      await alertRef.update({
+        source_ts_ms: admin.firestore.FieldValue.delete(),
+        created_at: admin.firestore.FieldValue.delete(),
+        last_seen_at: admin.firestore.FieldValue.delete(),
+      });
+    } catch (e) {
+      // ignore if update fails (e.g., no-op)
+    }
 
     return {
       alertCreated: !existing.exists,

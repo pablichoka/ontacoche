@@ -135,8 +135,8 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
       return;
     }
     final String signature =
-        '${data['source_ts_ms'] ?? data['source_ts'] ?? data['updated_at'] ?? ''}'
-        '|${realtimePosition.latitude}|${realtimePosition.longitude}|${realtimePosition.speed ?? ''}';
+      '${data['source_ts'] ?? ''}'
+      '|${realtimePosition.latitude}|${realtimePosition.longitude}|${realtimePosition.speed ?? ''}';
     if (_lastRealtimeSignature == signature) {
       return;
     }
@@ -196,10 +196,7 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
       return null;
     }
 
-    final DateTime? timestamp =
-        Parsers.fromUnknown(stateData['source_ts']) ??
-        _fromMilliseconds(stateData['source_ts_ms']) ??
-        Parsers.fromUnknown(stateData['updated_at']);
+    final DateTime? timestamp = Parsers.fromUnknown(stateData['source_ts']);
 
     return DevicePosition(
       latitude: resolvedLatitude,

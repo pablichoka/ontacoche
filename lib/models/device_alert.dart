@@ -173,17 +173,8 @@ class DeviceAlert {
       return sourceTs;
     }
 
-    final Object? sourceTsMs = json['source_ts_ms'];
-    if (sourceTsMs is num) {
-      return DateTime.fromMillisecondsSinceEpoch(
-        sourceTsMs.toInt(),
-        isUtc: true,
-      ).toLocal();
-    }
-
-    return Parsers.fromUnknown(json['updated_at']) ??
-        Parsers.fromUnknown(json['created_at']) ??
-        Parsers.now();
+    // Only `source_ts` is considered authoritative; fall back to now if absent
+    return Parsers.now();
   }
 
   static List<DeviceAlert> fromDeviceMessage(Map<String, dynamic> json) {

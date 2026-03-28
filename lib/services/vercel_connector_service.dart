@@ -88,7 +88,7 @@ class VercelConnectorService {
       altitude: altitude,
       speed: speed,
       batteryLevel: batteryLevel,
-      timestamp: Parsers.fromUnknown(state['source_ts']) ?? Parsers.fromUnknown(state['updated_at']),
+      timestamp: Parsers.fromUnknown(state['source_ts']),
     );
   }
 

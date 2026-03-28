@@ -40,7 +40,7 @@ class DevicePosition {
         nestedPosition?['speed'] ?? payload['speed'] ?? payload['position.speed'],
       ),
       timestamp: _readDateTime(
-        payload['source_ts'] ?? payload['timestamp'] ?? payload['server.timestamp'] ?? payload['source_ts_ms'],
+        payload['source_ts'],
       ),
       batteryLevel: _readDouble(
         _asMap(payload['battery'])?['level'] ?? payload['battery.level'] ?? payload['battery_level'],
