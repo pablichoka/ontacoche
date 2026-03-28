@@ -1,3 +1,4 @@
+require('../../src/compat-url');
 const {
   createGeofence,
   handleApiError,

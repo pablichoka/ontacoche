@@ -1,3 +1,4 @@
+require('../src/compat-url');
 const admin = require('firebase-admin');
 
 let app;

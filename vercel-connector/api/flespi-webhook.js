@@ -1,3 +1,4 @@
+require('../src/compat-url');
 const { readConfig } = require('../src/config');
 const { getFirestore, getMessaging } = require('../src/firebaseAdmin');
 const admin = require('firebase-admin');
