@@ -5,8 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/tracking_flow.dart';
 import '../providers/api_provider.dart';
-import '../providers/telemetry_provider.dart';
-import '../providers/tracking_provider.dart';
+import '../providers/vehicle_state_provider.dart';
 import '../utils/parsers.dart';
 
 class DynamicIsland extends ConsumerStatefulWidget {

@@ -62,10 +62,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     setState(() => _isSaving = true);
 
     try {
-      final service = ref.read(flespiApiServiceProvider);
+      final service = ref.read(vercelConnectorServiceProvider);
       final selector = ref.read(deviceSelectorProvider);
 
-      await service.updateDevice(selector, {'name': newName});
+      await service.updateDeviceName(selector, newName);
 
       if (mounted) FocusScope.of(context).unfocus();
 

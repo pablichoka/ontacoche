@@ -67,19 +67,29 @@ class VercelConnectorService {
     }
 
     // support new compact state shape where position is nested
-    final Map<String, dynamic>? positionMap =
-        (state['position'] is Map) ? Map<String, dynamic>.from(state['position'] as Map) : null;
+    final Map<String, dynamic>? positionMap = (state['position'] is Map)
+        ? Map<String, dynamic>.from(state['position'] as Map)
+        : null;
 
-    final double? latitude = _toDouble(positionMap?['latitude'] ?? state['latitude']);
-    final double? longitude = _toDouble(positionMap?['longitude'] ?? state['longitude']);
+    final double? latitude = _toDouble(
+      positionMap?['latitude'] ?? state['latitude'],
+    );
+    final double? longitude = _toDouble(
+      positionMap?['longitude'] ?? state['longitude'],
+    );
     if (latitude == null || longitude == null) {
       return null;
     }
 
-    final double? altitude = _toDouble(positionMap?['altitude'] ?? state['altitude']);
+    final double? altitude = _toDouble(
+      positionMap?['altitude'] ?? state['altitude'],
+    );
     final double? speed = _toDouble(positionMap?['speed'] ?? state['speed']);
     final double? batteryLevel = _toDouble(
-      (state['battery'] is Map) ? Map<String, dynamic>.from(state['battery'] as Map)['level'] ?? state['battery_level'] : state['battery_level'],
+      (state['battery'] is Map)
+          ? Map<String, dynamic>.from(state['battery'] as Map)['level'] ??
+                state['battery_level']
+          : state['battery_level'],
     );
 
     return DevicePosition(
@@ -412,6 +422,84 @@ class VercelConnectorService {
       return value.toDouble();
     }
     return double.tryParse(value.toString());
+  }
+
+  Future<Map<String, dynamic>> sendCommand(
+    String selector, {
+    required String commandName,
+    required Map<String, dynamic> properties,
+    bool queue = false,
+    int? timeout,
+    int? ttl,
+    int? priority,
+    int? maxAttempts,
+    String? condition,
+  }) async {
+    final Uri uri = Uri.parse('$baseUrl/api/command');
+    final Map<String, dynamic> body = <String, dynamic>{
+      'selector': selector,
+      'name': commandName,
+      'properties': properties,
+      'queue': queue,
+      if (timeout != null) 'timeout': timeout,
+      if (ttl != null) 'ttl': ttl,
+      if (priority != null) 'priority': priority,
+      if (maxAttempts != null) 'maxAttempts': maxAttempts,
+      if (condition != null) 'condition': condition,
+    };
+
+    final http.Response response = await _client.post(
+      uri,
+      headers: _writeHeaders(),
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw VercelConnectorException(
+        statusCode: response.statusCode,
+        message: response.body,
+      );
+    }
+
+    final dynamic decoded = response.body.isEmpty
+        ? <String, dynamic>{}
+        : jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    return <String, dynamic>{'result': decoded};
+  }
+
+  Future<Map<String, dynamic>> updateDeviceName(
+    String selector,
+    String name,
+  ) async {
+    final Uri uri = Uri.parse('$baseUrl/api/device');
+    final Map<String, dynamic> body = <String, dynamic>{
+      'selector': selector,
+      'name': name,
+    };
+
+    final http.Response response = await _client.put(
+      uri,
+      headers: _writeHeaders(),
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw VercelConnectorException(
+        statusCode: response.statusCode,
+        message: response.body,
+      );
+    }
+
+    final dynamic decoded = response.body.isEmpty
+        ? <String, dynamic>{}
+        : jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    return <String, dynamic>{'result': decoded};
   }
 
   void dispose() {

@@ -1,0 +1,236 @@
+import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
+import '../../models/geofence.dart';
+
+class GeofenceEditorCard extends StatelessWidget {
+  final int? editingGeofenceId;
+  final GeofenceType editorType;
+  final TextEditingController nameController;
+  final TextEditingController priorityController;
+  final TextEditingController radiusController;
+  final bool isDrawingPolygon;
+  final bool isPickingCenter;
+  final List<LatLng> draftPath;
+  final bool isSaving;
+  final ValueChanged<int> onToggleEditorType;
+  final VoidCallback onToggleDrawPolygon;
+  final VoidCallback onUndoPolygon;
+  final VoidCallback onClearPolygon;
+  final VoidCallback onPickCenter;
+  final VoidCallback onSave;
+
+  const GeofenceEditorCard({
+    super.key,
+    required this.editingGeofenceId,
+    required this.editorType,
+    required this.nameController,
+    required this.priorityController,
+    required this.radiusController,
+    required this.isDrawingPolygon,
+    required this.isPickingCenter,
+    required this.draftPath,
+    required this.isSaving,
+    required this.onToggleEditorType,
+    required this.onToggleDrawPolygon,
+    required this.onUndoPolygon,
+    required this.onClearPolygon,
+    required this.onPickCenter,
+    required this.onSave,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF131313), // surface
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            editingGeofenceId == null
+                ? (editorType == GeofenceType.circle
+                      ? 'CREAR GEOVALLA CIRCULAR'
+                      : 'CREAR GEOVALLA POLIGONAL')
+                : (editorType == GeofenceType.circle
+                      ? 'EDITAR GEOVALLA CIRCULAR'
+                      : 'EDITAR GEOVALLA POLIGONAL'),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: nameController,
+            style: const TextStyle(color: Colors.white),
+            decoration: _inputDecoration('Nombre'),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: TextField(
+                  controller: priorityController,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: _inputDecoration('Prioridad (0-100)'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              if (editorType == GeofenceType.circle)
+                Expanded(
+                  child: TextField(
+                    controller: radiusController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: _inputDecoration('Radio (km)'),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ToggleButtons(
+            isSelected: <bool>[
+              editorType == GeofenceType.circle,
+              editorType == GeofenceType.polygon,
+            ],
+            onPressed: onToggleEditorType,
+            color: Colors.white54,
+            selectedColor: const Color(0xFF5ADCB3),
+            fillColor: const Color(0xFF5ADCB3).withValues(alpha: 0.1),
+            borderColor: Colors.white24,
+            selectedBorderColor: const Color(0xFF5ADCB3).withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(8),
+            children: const <Widget>[
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Icon(Icons.circle_outlined, size: 20),
+              ),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Icon(Icons.polyline_rounded, size: 20),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Wrap(
+                spacing: 8,
+                children: <Widget>[
+                  if (editorType == GeofenceType.polygon) ...[
+                    IconButton(
+                      tooltip: isDrawingPolygon ? 'Detener' : 'Dibujar puntos',
+                      onPressed: onToggleDrawPolygon,
+                      icon: Icon(
+                        Icons.edit_location_rounded,
+                        color: isDrawingPolygon
+                            ? const Color(0xFF5ADCB3)
+                            : Colors.white70,
+                      ),
+                      style: _iconButtonStyle(),
+                    ),
+                    IconButton(
+                      tooltip: 'Deshacer',
+                      onPressed: draftPath.isEmpty ? null : onUndoPolygon,
+                      icon: const Icon(
+                        Icons.undo_rounded,
+                        color: Colors.white70,
+                      ),
+                      style: _iconButtonStyle(),
+                    ),
+                    IconButton(
+                      tooltip: 'Limpiar',
+                      onPressed: draftPath.isEmpty ? null : onClearPolygon,
+                      icon: const Icon(
+                        Icons.clear_rounded,
+                        color: Colors.white70,
+                      ),
+                      style: _iconButtonStyle(),
+                    ),
+                  ],
+                  if (editorType == GeofenceType.circle) ...[
+                    IconButton(
+                      tooltip: isPickingCenter
+                          ? 'Toca el mapa...'
+                          : 'Seleccionar centro',
+                      onPressed: onPickCenter,
+                      icon: Icon(
+                        Icons.touch_app_rounded,
+                        color: isPickingCenter
+                            ? const Color(0xFF5ADCB3)
+                            : Colors.white70,
+                      ),
+                      style: _iconButtonStyle(),
+                    ),
+                  ],
+                ],
+              ),
+              FilledButton.icon(
+                onPressed: isSaving ? null : onSave,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF5ADCB3),
+                  foregroundColor: const Color(0xFF131313),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                ),
+                icon: isSaving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFF131313),
+                        ),
+                      )
+                    : const Icon(Icons.save_rounded, size: 20),
+                label: const Text(
+                  'Guardar',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(color: Colors.white54),
+      enabledBorder: const UnderlineInputBorder(
+        borderSide: BorderSide(color: Colors.white24, width: 1),
+      ),
+      focusedBorder: const UnderlineInputBorder(
+        borderSide: BorderSide(color: Color(0xFF5ADCB3), width: 2),
+      ),
+      filled: true,
+      fillColor: const Color(0xFF1E1E1E), // surface-container-low
+    );
+  }
+
+  ButtonStyle _iconButtonStyle() {
+    return IconButton.styleFrom(
+      backgroundColor: const Color(0xFF1E1E1E), // surface-container-low
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    );
+  }
+}

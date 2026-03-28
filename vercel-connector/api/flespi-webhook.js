@@ -154,10 +154,7 @@ function writeLog(level, message, context = {}) {
 
   if (level === 'error') {
     console.error(JSON.stringify(entry));
-    return;
   }
-
-  console.log(JSON.stringify(entry));
 }
 
 function validateRequest(req, config) {
@@ -547,12 +544,46 @@ async function persistEvent({ firestore, config, event, classification }) {
     }
   }
 
-  // overwrite last state document to ensure `device.id` nested shape
-  await stateRef.set(writeSnapshot, { merge: true });
+  let skipStateWrite = false;
+  if (existingStateDoc && existingStateDoc.exists) {
+    try {
+      const existingData = existingStateDoc.data() || {};
+      const existingPos = existingData.position || {};
+      const newPos = writeSnapshot.position || {};
+      
+      const identicalPos = 
+        existingPos.latitude === newPos.latitude && 
+        existingPos.longitude === newPos.longitude &&
+        existingPos.speed === newPos.speed &&
+        existingPos.direction === newPos.direction;
+        
+      const existingActive = Boolean(existingData.communication_active);
+      const newActive = Boolean(writeSnapshot.communication_active);
+        
+      const tsDiffMs = writeSnapshot.source_ts_ms - (existingData.source_ts_ms || 0);
+      const DEDUPE_THRESHOLD_MS = 2 * 60 * 1000;
 
-    if (config.storeStateHistory) {
-      await firestore.collection(config.stateHistoryCollection).add(writeSnapshot);
+      const isAlert = effectiveClassification.vibrationAlarm || effectiveClassification.geofenceAlarm || effectiveClassification.geofenceConfigChange;
+      
+      if (!isAlert && identicalPos && existingActive === newActive && tsDiffMs >= 0 && tsDiffMs < DEDUPE_THRESHOLD_MS) {
+        skipStateWrite = true;
+      }
+    } catch (e) {
+      // ignore
     }
+  }
+
+  const writeOps = [];
+  if (!skipStateWrite) {
+    writeOps.push(stateRef.set(writeSnapshot, { merge: true }));
+    if (config.storeStateHistory) {
+      writeOps.push(firestore.collection(config.stateHistoryCollection).add(writeSnapshot));
+    }
+  }
+  
+  if (writeOps.length > 0) {
+    await Promise.all(writeOps);
+  }
 
   if (effectiveClassification.vibrationAlarm || effectiveClassification.geofenceAlarm) {
     const dedupeBucket = effectiveClassification.vibrationAlarm
@@ -832,16 +863,20 @@ module.exports = async function handler(req, res) {
       };
 
       if (event.deviceId) {
-        persistenceResult = await persistEvent({
-          firestore,
-          config,
-          event,
-          classification,
-        });
-        persisted += 1;
-
         const tripSnapshot = buildStateSnapshot(event, classification, config);
-        await processTripPoint({ firestore, config, deviceId: event.deviceId, snapshot: tripSnapshot });
+
+        const [persistedRes] = await Promise.all([
+          persistEvent({
+            firestore,
+            config,
+            event,
+            classification,
+          }),
+          processTripPoint({ firestore, config, deviceId: event.deviceId, snapshot: tripSnapshot }),
+        ]);
+        
+        persistenceResult = persistedRes;
+        persisted += 1;
       }
 
       const effectiveClassification =

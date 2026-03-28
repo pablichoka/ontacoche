@@ -7,7 +7,9 @@ import 'package:latlong2/latlong.dart';
 
 import '../models/geofence.dart';
 import '../providers/api_provider.dart';
-import '../providers/tracking_provider.dart';
+import '../providers/vehicle_state_provider.dart';
+import '../widgets/geofence/geofence_editor_card.dart';
+import '../widgets/geofence/geofence_list_tile.dart';
 
 class GeofenceManagerScreen extends ConsumerStatefulWidget {
   const GeofenceManagerScreen({super.key});
@@ -395,18 +397,23 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
     }
 
     Widget content = ColoredBox(
-      color: const Color(0xFFF8FAFC),
+      color: const Color(0xFF131313),
       child: SafeArea(
         bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              color: Colors.white,
+              color: const Color(0xFF131313),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: const Text(
-                'Gestion de geovallas',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+                'GESTIÓN DE GEOVALLAS',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20,
+                  color: Colors.white,
+                  letterSpacing: -0.5,
+                ),
               ),
             ),
             Expanded(
@@ -417,7 +424,51 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                     if (_showEditor) ...[
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                        child: _buildEditorCard(),
+                        child: GeofenceEditorCard(
+                          editingGeofenceId: _editingGeofenceId,
+                          editorType: _editorType,
+                          nameController: _nameController,
+                          priorityController: _priorityController,
+                          radiusController: _radiusController,
+                          isDrawingPolygon: _isDrawingPolygon,
+                          isPickingCenter: _isPickingCenter,
+                          draftPath: _draftPath,
+                          isSaving: _isSaving,
+                          onToggleEditorType: (int idx) {
+                            setState(() {
+                              _editorType = idx == 0
+                                  ? GeofenceType.circle
+                                  : GeofenceType.polygon;
+                              if (_editorType == GeofenceType.circle) {
+                                _draftPath = <LatLng>[];
+                                _isDrawingPolygon = false;
+                              } else {
+                                _draftCenter = null;
+                              }
+                            });
+                          },
+                          onToggleDrawPolygon: () {
+                            setState(() {
+                              _isDrawingPolygon = !_isDrawingPolygon;
+                            });
+                          },
+                          onUndoPolygon: () {
+                            setState(() {
+                              _draftPath.removeLast();
+                            });
+                          },
+                          onClearPolygon: () {
+                            setState(() {
+                              _draftPath = <LatLng>[];
+                            });
+                          },
+                          onPickCenter: () {
+                            setState(() {
+                              _isPickingCenter = true;
+                            });
+                          },
+                          onSave: _save,
+                        ),
                       ),
                     ],
                     Padding(
@@ -577,8 +628,8 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                                               radius: selected ? 14 : 12,
                                               backgroundColor: selected
                                                   ? Colors.orange
-                                                  : Colors.orange.withOpacity(
-                                                      0.9,
+                                                  : Colors.orange.withValues(
+                                                      alpha: 0.9,
                                                     ),
                                               child: Text(
                                                 '${idx + 1}',
@@ -609,6 +660,7 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                               padding: EdgeInsets.only(top: 32),
                               child: Text(
                                 'No hay geovallas asignadas todavia.',
+                                style: TextStyle(color: Colors.white54),
                               ),
                             );
                           }
@@ -621,7 +673,12 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                                 const SizedBox(height: 10),
                             itemBuilder: (BuildContext context, int index) {
                               final Geofence geofence = data[index];
-                              return _buildGeofenceTile(geofence);
+                              return GeofenceListTile(
+                                geofence: geofence,
+                                isEditing: _editingGeofenceId == geofence.id,
+                                onEdit: () => _loadForEdit(geofence),
+                                onDelete: () => _delete(geofence),
+                              );
                             },
                           );
                         },
@@ -632,7 +689,10 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                         error: (Object error, StackTrace _) {
                           return Padding(
                             padding: const EdgeInsets.only(top: 24),
-                            child: Text('Error cargando geovallas: $error'),
+                            child: Text(
+                              'Error cargando geovallas: $error',
+                              style: const TextStyle(color: Colors.redAccent),
+                            ),
                           );
                         },
                       ),
@@ -655,224 +715,23 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
           child: !_showEditor
               ? FloatingActionButton.extended(
                   onPressed: _startCreateMode,
+                  backgroundColor: const Color(0xFF5ADCB3),
+                  foregroundColor: const Color(0xFF131313),
                   icon: const Icon(Icons.add_rounded),
-                  label: const Text('Nueva geovalla'),
+                  label: const Text(
+                    'Nueva geovalla',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 )
               : FloatingActionButton.extended(
                   onPressed: _exitEditor,
+                  backgroundColor: const Color(0xFF1E1E1E),
+                  foregroundColor: Colors.white,
                   icon: const Icon(Icons.close_rounded),
                   label: const Text('Cerrar'),
                 ),
         ),
       ],
-    );
-  }
-
-  Widget _buildEditorCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            _editingGeofenceId == null
-                ? (_editorType == GeofenceType.circle
-                      ? 'Crear geovalla circular'
-                      : 'Crear geovalla poligonal')
-                : (_editorType == GeofenceType.circle
-                      ? 'Editar geovalla circular'
-                      : 'Editar geovalla poligonal'),
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: 'Nombre',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: TextField(
-                  controller: _priorityController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Prioridad (0-100)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (_editorType == GeofenceType.circle)
-                Expanded(
-                  child: TextField(
-                    controller: _radiusController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: const InputDecoration(
-                      labelText: 'Radio (km)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ToggleButtons(
-            isSelected: <bool>[
-              _editorType == GeofenceType.circle,
-              _editorType == GeofenceType.polygon,
-            ],
-            onPressed: (int idx) {
-              setState(() {
-                _editorType = idx == 0
-                    ? GeofenceType.circle
-                    : GeofenceType.polygon;
-                // reset incompatible draft data
-                if (_editorType == GeofenceType.circle) {
-                  _draftPath = <LatLng>[];
-                  _isDrawingPolygon = false;
-                } else {
-                  _draftCenter = null;
-                }
-              });
-            },
-            children: const <Widget>[
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Text('Círculo'),
-              ),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Text('Polígono'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (_editorType == GeofenceType.polygon)
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: <Widget>[
-                OutlinedButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _isDrawingPolygon = !_isDrawingPolygon;
-                    });
-                  },
-                  icon: const Icon(Icons.edit_location_rounded),
-                  label: Text(_isDrawingPolygon ? 'Detener' : 'Dibujar puntos'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _draftPath.isEmpty
-                      ? null
-                      : () {
-                          setState(() {
-                            _draftPath.removeLast();
-                          });
-                        },
-                  icon: const Icon(Icons.undo_rounded),
-                  label: const Text('Deshacer'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _draftPath.isEmpty
-                      ? null
-                      : () {
-                          setState(() {
-                            _draftPath = <LatLng>[];
-                          });
-                        },
-                  icon: const Icon(Icons.clear_rounded),
-                  label: const Text('Limpiar'),
-                ),
-              ],
-            ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: <Widget>[
-              if (_editorType == GeofenceType.circle)
-                OutlinedButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _isPickingCenter = true;
-                    });
-                  },
-                  icon: const Icon(Icons.touch_app_rounded),
-                  label: Text(
-                    _isPickingCenter ? 'Toca el mapa...' : 'Seleccionar centro',
-                  ),
-                ),
-              FilledButton.icon(
-                onPressed: _isSaving ? null : _save,
-                icon: _isSaving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_rounded),
-                label: Text(
-                  _editingGeofenceId == null ? 'Crear' : 'Guardar cambios',
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGeofenceTile(Geofence geofence) {
-    final bool isEditing = _editingGeofenceId == geofence.id;
-    final String shapeLabel = geofence.type == GeofenceType.circle
-        ? 'Circulo'
-        : 'Poligono';
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isEditing ? Colors.orange : Colors.transparent,
-          width: 1.5,
-        ),
-      ),
-      child: ListTile(
-        title: Text(geofence.name),
-        subtitle: Text('Prioridad ${geofence.priority} · $shapeLabel'),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            IconButton(
-              tooltip: 'Editar',
-              onPressed: () => _loadForEdit(geofence),
-              icon: const Icon(Icons.edit_rounded),
-            ),
-            IconButton(
-              tooltip: 'Eliminar',
-              onPressed: () => _delete(geofence),
-              icon: const Icon(Icons.delete_outline_rounded),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

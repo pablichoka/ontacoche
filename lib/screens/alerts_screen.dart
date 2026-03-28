@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers/telemetry_provider.dart';
+import '../providers/vehicle_state_provider.dart';
 import '../models/device_alert.dart';
 
 class AlertsScreen extends ConsumerWidget {

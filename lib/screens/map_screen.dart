@@ -11,8 +11,7 @@ import '../models/device_position.dart';
 import '../models/geofence.dart';
 import '../models/tracking_flow.dart';
 import '../providers/api_provider.dart';
-import '../providers/telemetry_provider.dart';
-import '../providers/tracking_provider.dart';
+import '../providers/vehicle_state_provider.dart';
 import '../widgets/dynamic_island.dart';
 
 class MapScreen extends ConsumerStatefulWidget {

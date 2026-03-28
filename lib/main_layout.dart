@@ -7,7 +7,7 @@ import 'screens/alerts_screen.dart';
 import 'screens/geofence_manager_screen.dart';
 import 'screens/settings_screen.dart';
 import 'widgets/custom_bottom_navbar.dart';
-import 'providers/telemetry_provider.dart';
+import 'providers/vehicle_state_provider.dart';
 import 'models/device_alert.dart';
 
 class MainLayout extends ConsumerStatefulWidget {
