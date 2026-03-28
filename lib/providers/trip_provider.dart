@@ -1,16 +1,35 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/trip.dart';
-import '../services/trip_service.dart';
+import '../services/vercel_connector_service.dart';
 import 'api_provider.dart';
-
-final tripServiceProvider = Provider<TripService>((Ref ref) {
-  return TripService();
-});
 
 final tripsProvider = StreamProvider<List<Trip>>((Ref ref) {
   final String deviceId = ref.watch(deviceIdentProvider).trim();
   if (deviceId.isEmpty) return Stream.value(const <Trip>[]);
-  final TripService service = ref.watch(tripServiceProvider);
-  return service.watchTrips(deviceId);
+
+  final VercelConnectorService service = ref.watch(vercelConnectorServiceProvider);
+
+  // Poll the backend every 15 seconds and re-emit results. If an error
+  // occurs, rethrow so the provider moves to the error state and the UI
+  // can show the message.
+  return (() async* {
+    bool disposed = false;
+    ref.onDispose(() => disposed = true);
+
+    while (!disposed) {
+      try {
+        final List<Map<String, dynamic>> raw = await service.getTripsRaw(deviceId, limit: 50);
+        final List<Trip> trips = raw
+            .map((m) => Trip.fromFirestore(m['id'] as String? ?? '', m))
+            .toList(growable: false);
+        yield trips;
+      } catch (e) {
+        // rethrow to mark provider as error
+        rethrow;
+      }
+
+      await Future<void>.delayed(const Duration(seconds: 15));
+    }
+  })();
 });

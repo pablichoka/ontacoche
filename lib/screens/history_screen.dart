@@ -46,15 +46,20 @@ class HistoryScreen extends ConsumerWidget {
         loading: () => const Center(child: ExpressiveIndicator(size: 40, strokeWidth: 5,)),
         error: (Object error, StackTrace stackTrace) => Center(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
                 const Icon(Icons.route_rounded, size: 48, color: Colors.grey),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Text(
                   'No se pudo cargar los trayectos',
                   style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => ref.invalidate(tripsProvider),
+                  child: const Text('Reintentar'),
                 ),
               ],
             ),

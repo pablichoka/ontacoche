@@ -239,6 +239,27 @@ class VercelConnectorService {
         .toList(growable: false);
   }
 
+  Future<List<Map<String, dynamic>>> getTripsRaw(String deviceId, {int limit = 20}) async {
+    final Uri uri = Uri.parse('$baseUrl/api/trips?device_id=$deviceId&limit=$limit');
+    final Map<String, String> headers = _readHeaders();
+
+    final http.Response response = await _client.get(uri, headers: headers);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw VercelConnectorException(
+        statusCode: response.statusCode,
+        message: response.body,
+      );
+    }
+
+    final Map<String, dynamic> payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final List<dynamic> tripsRaw = payload['trips'] as List<dynamic>? ?? const <dynamic>[];
+    return tripsRaw
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m as Map))
+        .toList(growable: false);
+  }
+
+
   Future<Geofence> createCircleGeofence({
     required String deviceId,
     required String name,

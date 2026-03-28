@@ -84,17 +84,28 @@ class AlertsScreen extends ConsumerWidget {
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, stack) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.notifications_off_rounded,
-                size: 48,
-                color: AppColors.muted,
-              ),
-              const SizedBox(height: 16),
-              const Text('No hay alertas recientes'),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                const Icon(
+                  Icons.notifications_off_rounded,
+                  size: 48,
+                  color: AppColors.muted,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'No se pudieron cargar las alertas',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => ref.invalidate(alertsHistoryProvider),
+                  child: const Text('Reintentar'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

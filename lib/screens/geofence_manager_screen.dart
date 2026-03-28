@@ -709,6 +709,41 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
     return Stack(
       children: [
         content,
+        if (geofencesState.hasError)
+          Positioned(
+            top: 120,
+            left: 16,
+            right: 16,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xDD1E1E1E),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.orange),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'No se pudieron cargar las geovallas',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        ref.invalidate(managedGeofencesProvider);
+                        ref.invalidate(deviceGeofencesProvider);
+                      },
+                      child: const Text('Reintentar'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         Positioned(
           bottom: 150,
           right: 16,
