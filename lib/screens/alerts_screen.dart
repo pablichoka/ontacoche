@@ -159,15 +159,20 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                       setState(() => _isDeleting = true);
 
                       try {
-                        final service = ref.read(vercelConnectorServiceProvider);
-                        final String deviceId = ref.read(deviceIdentProvider).trim();
-                        final int deleted = await service.deleteDeviceAlertsForDevice(
-                          deviceId,
+                        final service = ref.read(
+                          vercelConnectorServiceProvider,
                         );
+                        final String deviceId = ref
+                            .read(deviceIdentProvider)
+                            .trim();
+                        final int deleted = await service
+                            .deleteDeviceAlertsForDevice(deviceId);
                         ref.invalidate(alertsHistoryProvider);
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Eliminadas $deleted alertas')),
+                          SnackBar(
+                            content: Text('Eliminadas $deleted alertas'),
+                          ),
                         );
                       } catch (e) {
                         if (!mounted) return;
@@ -182,9 +187,9 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                   ? const SizedBox(
                       width: 24,
                       height: 24,
-                      child: CircularProgressIndicator(
+                      child: ExpressiveIndicator(
                         strokeWidth: 2.2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        color: Colors.white,
                       ),
                     )
                   : const Icon(

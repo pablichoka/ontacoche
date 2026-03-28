@@ -88,7 +88,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           Positioned(
             right: 16,
             bottom: 150,
-              child: FloatingActionButton(
+            child: FloatingActionButton(
               shape: const CircleBorder(),
               clipBehavior: Clip.hardEdge,
               backgroundColor: Colors.redAccent,
@@ -121,15 +121,21 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       setState(() => _isDeleting = true);
 
                       try {
-                        final service = ref.read(vercelConnectorServiceProvider);
-                        final String deviceId = ref.read(deviceIdentProvider).trim();
+                        final service = ref.read(
+                          vercelConnectorServiceProvider,
+                        );
+                        final String deviceId = ref
+                            .read(deviceIdentProvider)
+                            .trim();
                         final int deleted = await service.deleteTripsForDevice(
                           deviceId,
                         );
                         ref.invalidate(tripsProvider);
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Eliminados $deleted trayectos')),
+                          SnackBar(
+                            content: Text('Eliminados $deleted trayectos'),
+                          ),
                         );
                       } catch (e) {
                         if (!mounted) return;
@@ -144,9 +150,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                   ? const SizedBox(
                       width: 24,
                       height: 24,
-                      child: CircularProgressIndicator(
+                      child: ExpressiveIndicator(
                         strokeWidth: 2.2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        color: Colors.white,
                       ),
                     )
                   : const Icon(

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:ontacoche/theme/app_colors.dart';
-import 'package:ontacoche/widgets/expressive_indicator.dart';
 import 'package:ontacoche/widgets/app_text_field.dart';
+import 'package:ontacoche/widgets/expressive_indicator.dart';
+
 import '../../models/geofence.dart';
 
 class GeofenceEditorCard extends StatelessWidget {
@@ -220,21 +221,6 @@ class GeofenceEditorCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-
-  InputDecoration _inputDecoration(String label) {
-    return InputDecoration(
-      labelText: label,
-      labelStyle: const TextStyle(color: Colors.white54),
-      enabledBorder: const UnderlineInputBorder(
-        borderSide: BorderSide(color: Colors.white24, width: 1),
-      ),
-      focusedBorder: const UnderlineInputBorder(
-        borderSide: BorderSide(color: Color(0xFF5ADCB3), width: 2),
-      ),
-      filled: true,
-      fillColor: const Color(0xFF1E1E1E), // surface-container-low
     );
   }
 

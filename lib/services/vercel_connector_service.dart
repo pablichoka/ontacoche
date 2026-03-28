@@ -152,7 +152,8 @@ class VercelConnectorService {
       );
     }
 
-    final Map<String, dynamic> payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final Map<String, dynamic> payload =
+        jsonDecode(response.body) as Map<String, dynamic>;
     final Object? deleted = payload['deleted'];
     if (deleted is num) return deleted.toInt();
     return int.tryParse(deleted?.toString() ?? '') ?? 0;
@@ -257,8 +258,13 @@ class VercelConnectorService {
         .toList(growable: false);
   }
 
-  Future<List<Map<String, dynamic>>> getTripsRaw(String deviceId, {int limit = 20}) async {
-    final Uri uri = Uri.parse('$baseUrl/api/trips?device_id=$deviceId&limit=$limit');
+  Future<List<Map<String, dynamic>>> getTripsRaw(
+    String deviceId, {
+    int limit = 20,
+  }) async {
+    final Uri uri = Uri.parse(
+      '$baseUrl/api/trips?device_id=$deviceId&limit=$limit',
+    );
     final Map<String, String> headers = _readHeaders();
 
     final http.Response response = await _client.get(uri, headers: headers);
@@ -269,11 +275,13 @@ class VercelConnectorService {
       );
     }
 
-    final Map<String, dynamic> payload = jsonDecode(response.body) as Map<String, dynamic>;
-    final List<dynamic> tripsRaw = payload['trips'] as List<dynamic>? ?? const <dynamic>[];
+    final Map<String, dynamic> payload =
+        jsonDecode(response.body) as Map<String, dynamic>;
+    final List<dynamic> tripsRaw =
+        payload['trips'] as List<dynamic>? ?? const <dynamic>[];
     return tripsRaw
         .whereType<Map>()
-        .map((m) => Map<String, dynamic>.from(m as Map))
+        .map((m) => Map<String, dynamic>.from(m))
         .toList(growable: false);
   }
 
@@ -289,12 +297,12 @@ class VercelConnectorService {
       );
     }
 
-    final Map<String, dynamic> payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final Map<String, dynamic> payload =
+        jsonDecode(response.body) as Map<String, dynamic>;
     final Object? deleted = payload['deleted'];
     if (deleted is num) return deleted.toInt();
     return int.tryParse(deleted?.toString() ?? '') ?? 0;
   }
-
 
   Future<Geofence> createCircleGeofence({
     required String deviceId,
