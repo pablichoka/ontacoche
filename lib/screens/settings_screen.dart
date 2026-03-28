@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:ontacoche/widgets/expressive_indicator.dart';
 
 import '../providers/api_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_text_field.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -78,7 +80,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           builder: (context) => AlertDialog(
             title: const Text('Nombre actualizado'),
             content: const Text(
-              'El nombre se ha actualizado en el servidor. ' 
+              'El nombre se ha actualizado en el servidor. '
               'Puede que no veas el cambio hasta que reinicies la app o el tracker envíe nueva actividad.',
             ),
             actions: [
@@ -158,39 +160,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           child: Row(
                             children: [
                               Expanded(
-                                child: TextField(
+                                child: AppTextField(
                                   controller: _nameController,
                                   focusNode: _nameFocusNode,
-                                  decoration: InputDecoration(
-                                    hintText: 'Ej: Mi Coche',
-                                    hintStyle: const TextStyle(
-                                      color: AppColors.muted,
-                                    ),
-                                    filled: true,
-                                    fillColor: AppColors.surface,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 12,
-                                    ),
-                                  ),
+                                  hintText: 'Ej: Mi Coche',
                                 ),
                               ),
                               const SizedBox(width: 8),
                               _isSaving
-                                  ? const CircularProgressIndicator()
+                                  ? const ExpressiveIndicator()
                                   : IconButton.filled(
                                       onPressed: _saveDeviceName,
-                                      icon: const Icon(Icons.check_rounded),
+                                      icon: const Icon(Icons.save),
                                       style: IconButton.styleFrom(
                                         backgroundColor: AppColors.brand,
                                         foregroundColor: AppColors.surface,
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(
-                                            12,
+                                            50,
                                           ),
                                         ),
                                       ),
@@ -199,51 +186,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        _buildSectionTitle('Preferencias de Geovallas'),
+                        _buildSectionTitle('Preferencias de parking'),
                         settingsAsync.when(
                           data: (settings) {
                             if (_parkingController.text.isEmpty && !_isSaving) {
                               _parkingController.text = settings
-                                  .parkingDiameterMeters
+                                  .parkingRadiusMeters
                                   .toStringAsFixed(0);
                             }
                             return _buildSettingItem(
-                              title: 'Diámetro parking (m)',
+                              title: 'Radio parking (m)',
                               subtitle:
-                                  'Diámetro por defecto para geovallas tipo parking',
+                                  'Radio por defecto para geovallas tipo parking',
                               child: Row(
                                 children: [
                                   Expanded(
-                                    child: TextField(
+                                    child: AppTextField(
                                       controller: _parkingController,
                                       focusNode: _parkingFocusNode,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                            decimal: false,
-                                          ),
-                                      decoration: InputDecoration(
-                                        hintText: '100',
-                                        hintStyle: const TextStyle(
-                                          color: AppColors.muted,
-                                        ),
-                                        filled: true,
-                                        fillColor: AppColors.surface,
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                          borderSide: BorderSide.none,
-                                        ),
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                              vertical: 12,
-                                            ),
-                                      ),
+                                      hintText: '100',
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: false),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  FilledButton.icon(
+                                  IconButton(
                                     onPressed: () async {
                                       final String raw = _parkingController.text
                                           .trim();
@@ -296,12 +262,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                       }
                                     },
                                     icon: const Icon(Icons.save_rounded),
-                                    label: const Text(
-                                      'Guardar',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
                                     style: FilledButton.styleFrom(
                                       backgroundColor: AppColors.brand,
                                       foregroundColor: AppColors.surface,
@@ -316,7 +276,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             subtitle: 'Cargando…',
                             child: const SizedBox(
                               height: 48,
-                              child: Center(child: CircularProgressIndicator()),
+                              child: Center(child: ExpressiveIndicator()),
                             ),
                           ),
                           error: (e, s) => _buildSettingItem(
@@ -340,7 +300,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                   );
                 },
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () => const Center(child: ExpressiveIndicator()),
                 error: (err, stack) => Center(child: Text('Error: $err')),
               ),
             ),

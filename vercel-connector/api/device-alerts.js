@@ -70,7 +70,10 @@ module.exports = async function handler(req, res) {
   }
 
   const body = req.body && typeof req.body === 'object' ? req.body : {};
-  const rawDeviceId = req.method === 'GET' ? req.query.device_id : body.device_id;
+  // Accept device_id from query for GET and DELETE, or from body for POST
+  const rawDeviceId = (req.method === 'GET' || req.method === 'DELETE')
+    ? req.query.device_id
+    : body.device_id;
   const deviceId = String(rawDeviceId || '').trim();
   if (!deviceId) {
     return res.status(400).json({ ok: false, error: 'device_id is required' });

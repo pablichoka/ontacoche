@@ -15,6 +15,7 @@ import '../providers/vehicle_state_provider.dart';
 import '../theme/app_colors.dart';
 import '../widgets/dynamic_island.dart';
 import '../widgets/expressive_indicator.dart';
+import '../widgets/map_circle_marker.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
@@ -296,8 +297,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     shape: const CircleBorder(),
                     clipBehavior: Clip.hardEdge,
                     backgroundColor: hasParking
-                        ? AppColors.surfaceContainerLow
-                        : AppColors.brand,
+                        ? AppColors.muted
+                        : Color(0XFF063971),
                     onPressed: () async {
                       final searchList2 =
                           managedGeofencesState.valueOrNull ??
@@ -354,27 +355,26 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                         final String name =
                             'parking-${DateTime.now().toUtc().millisecondsSinceEpoch}';
                         // get configured diameter (meters) from settings
-                        double diameterMeters = 100.0;
+                        double radiusMeters = 100.0;
                         try {
                           final settings = await ref.read(
                             settingsRepositoryProvider.future,
                           );
-                          diameterMeters = settings.parkingDiameterMeters;
+                          radiusMeters = settings.parkingRadiusMeters;
                         } catch (_) {
                           // fallback to default
-                          diameterMeters = 100.0;
+                          radiusMeters = 100.0;
                         }
-                        final double radiusKm = (diameterMeters / 2.0) / 1000.0;
+                        
 
                         await ref
                             .read(vercelConnectorServiceProvider)
                             .createCircleGeofence(
                               deviceId: deviceId,
                               name: name,
-                              priority: 100,
+                              radiusMeters: radiusMeters,
                               latitude: _latestPosition!.latitude,
                               longitude: _latestPosition!.longitude,
-                              radiusKm: radiusKm,
                             );
 
                         ref.invalidate(managedGeofencesProvider);
@@ -431,7 +431,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     }
 
     return <Marker>[
-      Marker(point: center, width: 48, height: 48, child: const _GpsMarker()),
+      Marker(point: center, width: 48, height: 48, child: const MapCircleMarker()),
     ];
   }
 
@@ -444,17 +444,18 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               geofence.longitude != null &&
               geofence.radius != null,
         )
-        .map(
-          (Geofence geofence) => CircleMarker(
+        .map((Geofence geofence) {
+          debugPrint('map geofence id=${geofence.id} name=${geofence.name} radius_m=${geofence.radius}');
+          return CircleMarker(
             point: LatLng(geofence.latitude!, geofence.longitude!),
-            radius: geofence.radius! * 1000,
+            // `geofence.radius` is in meters
+            radius: geofence.radius!,
             useRadiusInMeter: true,
             color: Colors.blue.withValues(alpha: 0.18),
             borderColor: Colors.blue,
             borderStrokeWidth: 2,
-          ),
-        )
-        .toList(growable: false);
+          );
+        }).toList(growable: false);
   }
 
   List<Polygon> _buildGeofencePolygons(List<Geofence> geofences) {
@@ -481,39 +482,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 }
 
-class _GpsMarker extends StatelessWidget {
-  const _GpsMarker();
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        color: AppColors.surfaceContainerLow,
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 18,
-            offset: Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: DecoratedBox(
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppColors.brand,
-          ),
-          child: const Icon(
-            Icons.navigation_rounded,
-            color: Colors.white,
-            size: 30,
-          ),
-        ),
-      ),
-    );
-  }
-}
+// using shared ExpressiveIndicator widget from widgets/expressive_indicator.dart
 
 // using shared ExpressiveIndicator widget from widgets/expressive_indicator.dart

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:ontacoche/widgets/expressive_indicator.dart';
 
 import '../providers/vehicle_state_provider.dart';
 import '../models/device_alert.dart';
@@ -86,7 +87,7 @@ class AlertsScreen extends ConsumerWidget {
                   },
                 );
               },
-              loading: () => const Center(child: CircularProgressIndicator()),
+              loading: () => const Center(child: ExpressiveIndicator()),
               error: (err, stack) => Center(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -119,16 +120,26 @@ class AlertsScreen extends ConsumerWidget {
             right: 16,
             bottom: 150,
             child: FloatingActionButton(
+              shape: const CircleBorder(),
+              clipBehavior: Clip.hardEdge,
               backgroundColor: Colors.redAccent,
               onPressed: () async {
                 final bool? confirmed = await showDialog<bool>(
                   context: context,
                   builder: (context) => AlertDialog(
                     title: const Text('Borrar alertas'),
-                    content: const Text('¿Eliminar todas las alertas del servidor? Esta acción es irreversible.'),
+                    content: const Text(
+                      '¿Eliminar todas las alertas del servidor? Esta acción es irreversible.',
+                    ),
                     actions: [
-                      TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
-                      TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Eliminar')),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Cancelar'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text('Eliminar'),
+                      ),
                     ],
                   ),
                 );
@@ -138,13 +149,15 @@ class AlertsScreen extends ConsumerWidget {
                 showDialog<void>(
                   context: context,
                   barrierDismissible: false,
-                  builder: (_) => const Center(child: CircularProgressIndicator()),
+                  builder: (_) => const Center(child: ExpressiveIndicator()),
                 );
 
                 try {
                   final service = ref.read(vercelConnectorServiceProvider);
                   final String deviceId = ref.read(deviceIdentProvider).trim();
-                  final int deleted = await service.deleteDeviceAlertsForDevice(deviceId);
+                  final int deleted = await service.deleteDeviceAlertsForDevice(
+                    deviceId,
+                  );
                   ref.invalidate(alertsHistoryProvider);
                   Navigator.of(context).pop();
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -157,7 +170,11 @@ class AlertsScreen extends ConsumerWidget {
                   );
                 }
               },
-              child: const Icon(Icons.delete_rounded),
+              child: const Icon(
+                Icons.delete_rounded,
+                color: Colors.white,
+                size: 24,
+              ),
             ),
           ),
         ],

@@ -1,19 +1,19 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-const String _kParkingDiameterMeters = 'parking_diameter_m';
-const double _kDefaultParkingDiameterMeters = 100.0; // meters
+const String _kParkingRadiusMeters = 'parking_diameter_m';
+const double _kDefaultParkingRadiusMeters = 100.0; // meters
 
 class SettingsRepository {
   SettingsRepository._(this._prefs);
 
   final SharedPreferences _prefs;
 
-  double get parkingDiameterMeters =>
-      _prefs.getDouble(_kParkingDiameterMeters) ?? _kDefaultParkingDiameterMeters;
+  double get parkingRadiusMeters =>
+      _prefs.getDouble(_kParkingRadiusMeters) ?? _kDefaultParkingRadiusMeters;
 
   Future<void> setParkingDiameterMeters(double meters) async {
-    await _prefs.setDouble(_kParkingDiameterMeters, meters);
+    await _prefs.setDouble(_kParkingRadiusMeters, meters);
   }
 
   static Future<SettingsRepository> load() async {

@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../models/trip.dart';
 import '../theme/app_colors.dart';
+import '../widgets/map_circle_marker.dart';
 
 class TripPlaybackScreen extends StatefulWidget {
   const TripPlaybackScreen({super.key, required this.trip});
@@ -164,29 +165,20 @@ class _TripPlaybackScreenState extends State<TripPlaybackScreen>
                       point: _points.first,
                       width: 36,
                       height: 36,
-                      child: const _CircleMarker(
-                        icon: Icons.flag_rounded,
-                        color: AppColors.brand,
-                      ),
+                      child: const MapCircleMarker(),
                     ),
                   if (_points.length >= 2)
                     Marker(
                       point: _points.last,
                       width: 36,
                       height: 36,
-                      child: const _CircleMarker(
-                        icon: Icons.location_on_rounded,
-                        color: AppColors.success,
-                      ),
+                      child: const MapCircleMarker(),
                     ),
                   Marker(
                     point: _currentPosition,
                     width: 40,
                     height: 40,
-                    child: const _CircleMarker(
-                      icon: Icons.directions_car_filled_rounded,
-                      color: AppColors.danger,
-                    ),
+                    child: const MapCircleMarker(),
                   ),
                 ],
               ),
@@ -392,33 +384,3 @@ class _SpeedButton extends StatelessWidget {
   }
 }
 
-class _CircleMarker extends StatelessWidget {
-  const _CircleMarker({required this.icon, required this.color});
-
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLow,
-        shape: BoxShape.circle,
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: DecoratedBox(
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          child: Icon(icon, color: AppColors.surface, size: 16),
-        ),
-      ),
-    );
-  }
-}

@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:ontacoche/theme/app_colors.dart';
+import 'package:ontacoche/widgets/expressive_indicator.dart';
+import 'package:ontacoche/widgets/map_circle_marker.dart';
 
 import '../models/geofence.dart';
 import '../providers/api_provider.dart';
@@ -26,11 +29,10 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
   bool _didRecentreEditor = false;
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _radiusController = TextEditingController(
-    text: '0.20',
+    text: '100',
   );
-  final TextEditingController _priorityController = TextEditingController(
-    text: '10',
-  );
+  final String _radiusUnitDefault = 'm';
+  String _radiusUnit = 'm';
 
   LatLng? _draftCenter;
   bool _isPickingCenter = false;
@@ -50,7 +52,6 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
     _mapEventSub?.cancel();
     _nameController.dispose();
     _radiusController.dispose();
-    _priorityController.dispose();
     super.dispose();
   }
 
@@ -74,8 +75,8 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
     setState(() {
       _editingGeofenceId = null;
       _nameController.text = '';
-      _radiusController.text = '0.20';
-      _priorityController.text = '10';
+      _radiusController.text = '100';
+      _radiusUnit = _radiusUnitDefault;
       _draftCenter = null;
       _isPickingCenter = false;
       _draftPath = <LatLng>[];
@@ -90,8 +91,8 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
     setState(() {
       _editingGeofenceId = null;
       _nameController.text = '';
-      _radiusController.text = '0.20';
-      _priorityController.text = '10';
+      _radiusController.text = '100';
+      _radiusUnit = _radiusUnitDefault;
       _draftCenter = null;
       _draftPath = <LatLng>[];
       _isDrawingPolygon = false;
@@ -106,9 +107,8 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
   void _loadForEdit(Geofence geofence) {
     setState(() {
       _showEditor = true;
-      _editingGeofenceId = geofence.id;
+        _editingGeofenceId = geofence.id;
       _nameController.text = geofence.name;
-      _priorityController.text = geofence.priority.toString();
       _isPickingCenter = false;
 
       if (geofence.type == GeofenceType.circle &&
@@ -116,14 +116,24 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
           geofence.longitude != null &&
           geofence.radius != null) {
         _editorType = GeofenceType.circle;
-        _radiusController.text = geofence.radius!.toStringAsFixed(3);
+        // geofence.radius is in meters; display converted value according to selected unit
+        final double meters = geofence.radius!;
+        final double displayFactor = _radiusUnit == 'km'
+          ? 1000.0
+          : (_radiusUnit == 'hm' ? 100.0 : 1.0);
+        final double displayValue = meters / displayFactor;
+        _radiusController.text = displayValue.toStringAsFixed(
+          _radiusUnit == 'm' ? 0 : 3,
+        );
         _draftCenter = LatLng(geofence.latitude!, geofence.longitude!);
         _draftPath = <LatLng>[];
         _isDrawingPolygon = false;
+        // mark as recentred so the generic "recenter to vehicle" logic
+        // in build() does not override this intended recentering.
+        _didRecentreEditor = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           try {
             _mapController.move(_draftCenter!, _currentZoom);
-            _didRecentreEditor = true;
           } catch (_) {
             // ignore if controller not ready
           }
@@ -136,10 +146,23 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
             .toList(growable: true);
         _draftCenter = null;
         _isDrawingPolygon = false;
+        // compute a simple centroid for the polygon and recentre to it.
+        // also mark as recentred to prevent the vehicle recenter logic
+        // from overriding this.
+        _didRecentreEditor = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           try {
-            _mapController.move(_draftPath.first, _currentZoom);
-            _didRecentreEditor = true;
+            double sumLat = 0.0;
+            double sumLon = 0.0;
+            for (final p in _draftPath) {
+              sumLat += p.latitude;
+              sumLon += p.longitude;
+            }
+            final LatLng centroid = LatLng(
+              sumLat / _draftPath.length,
+              sumLon / _draftPath.length,
+            );
+            _mapController.move(centroid, _currentZoom);
           } catch (_) {
             // ignore if controller not ready
           }
@@ -159,13 +182,10 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
   }
 
   Future<void> _save() async {
-    if (_isSaving) {
-      return;
-    }
+    if (_isSaving) return;
 
     final String name = _nameController.text.trim();
-    final int? priority = int.tryParse(_priorityController.text.trim());
-    final double? radiusKm = double.tryParse(
+    final double? radiusValue = double.tryParse(
       _radiusController.text.trim().replaceAll(',', '.'),
     );
 
@@ -177,12 +197,8 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
       _showError('Selecciona un centro en el mapa.');
       return;
     }
-    if (priority == null) {
-      _showError('La prioridad debe ser un numero entero.');
-      return;
-    }
     if (_editorType == GeofenceType.circle &&
-        (radiusKm == null || radiusKm <= 0)) {
+        (radiusValue == null || radiusValue <= 0)) {
       _showError('El radio debe ser un numero mayor que 0.');
       return;
     }
@@ -202,23 +218,26 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
     try {
       final service = ref.read(vercelConnectorServiceProvider);
       if (_editorType == GeofenceType.circle) {
+        final double factor = _radiusUnit == 'km'
+            ? 1000.0
+            : (_radiusUnit == 'hm' ? 100.0 : 1.0);
+        final double radiusMeters = (radiusValue ?? 0.0) * factor;
+
         if (_editingGeofenceId == null) {
           await service.createCircleGeofence(
             deviceId: deviceId,
             name: name,
-            priority: priority,
             latitude: _draftCenter!.latitude,
             longitude: _draftCenter!.longitude,
-            radiusKm: radiusKm!,
+            radiusMeters: radiusMeters,
           );
         } else {
           await service.updateCircleGeofence(
             geofenceId: _editingGeofenceId!,
             name: name,
-            priority: priority,
             latitude: _draftCenter!.latitude,
             longitude: _draftCenter!.longitude,
-            radiusKm: radiusKm!,
+            radiusMeters: radiusMeters,
           );
         }
       } else {
@@ -234,14 +253,12 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
           await service.createPolygonGeofence(
             deviceId: deviceId,
             name: name,
-            priority: priority,
             path: path,
           );
         } else {
           await service.updatePolygonGeofence(
             geofenceId: _editingGeofenceId!,
             name: name,
-            priority: priority,
             path: path,
           );
         }
@@ -371,7 +388,8 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
         .map(
           (Geofence geofence) => CircleMarker(
             point: LatLng(geofence.latitude!, geofence.longitude!),
-            radius: geofence.radius! * 1000,
+            // `geofence.radius` is expressed in meters
+            radius: geofence.radius!,
             useRadiusInMeter: true,
             color: Colors.blue.withValues(alpha: 0.14),
             borderColor: Colors.blue,
@@ -384,16 +402,26 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
       _radiusController.text.trim().replaceAll(',', '.'),
     );
     if (_draftCenter != null && draftRadius != null && draftRadius > 0) {
+      final double factor = _radiusUnit == 'km'
+          ? 1000.0
+          : (_radiusUnit == 'hm' ? 100.0 : 1.0);
+      debugPrint('geofence draft: input=$draftRadius unit=$_radiusUnit factor=$factor preview_m=${draftRadius*factor}');
       circles.add(
         CircleMarker(
           point: _draftCenter!,
-          radius: draftRadius * 1000,
+          // draftRadius is entered by the user in the selected unit; convert to meters
+          radius: draftRadius * factor,
           useRadiusInMeter: true,
           color: Colors.orange.withValues(alpha: 0.20),
           borderColor: Colors.orange,
           borderStrokeWidth: 2,
         ),
       );
+    }
+
+    // log saved geofence radii for debugging
+    for (final Geofence g in geofences) {
+      debugPrint('saved geofence id=${g.id} name=${g.name} radius_m=${g.radius}');
     }
 
     Widget content = ColoredBox(
@@ -428,8 +456,30 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                           editingGeofenceId: _editingGeofenceId,
                           editorType: _editorType,
                           nameController: _nameController,
-                          priorityController: _priorityController,
                           radiusController: _radiusController,
+                          radiusUnit: _radiusUnit,
+                          onUnitChanged: (String? v) {
+                            final String newUnit = v ?? _radiusUnitDefault;
+                            setState(() {
+                              final double? current = double.tryParse(
+                                _radiusController.text.trim().replaceAll(',', '.'),
+                              );
+                              final double oldFactor = _radiusUnit == 'km'
+                                  ? 1000.0
+                                  : (_radiusUnit == 'hm' ? 100.0 : 1.0);
+                              final double newFactor = newUnit == 'km'
+                                  ? 1000.0
+                                  : (newUnit == 'hm' ? 100.0 : 1.0);
+                              if (current != null && current > 0) {
+                                final double meters = current * oldFactor;
+                                final double newDisplay = meters / newFactor;
+                                _radiusController.text = newDisplay.toStringAsFixed(
+                                  newUnit == 'm' ? 0 : 3,
+                                );
+                              }
+                              _radiusUnit = newUnit;
+                            });
+                          },
                           isDrawingPolygon: _isDrawingPolygon,
                           isPickingCenter: _isPickingCenter,
                           draftPath: _draftPath,
@@ -520,8 +570,8 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                                     'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                                 userAgentPackageName: 'com.ontacoche.app',
                               ),
-                              // current device marker when editor open
-                              if (_showEditor && initialPosition != null)
+                              // current device marker (show whenever we have an initial position)
+                              if (initialPosition != null)
                                 MarkerLayer(
                                   markers: <Marker>[
                                     Marker(
@@ -531,11 +581,7 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                                       ),
                                       width: 40,
                                       height: 40,
-                                      child: const Icon(
-                                        Icons.directions_car_rounded,
-                                        color: Colors.redAccent,
-                                        size: 32,
-                                      ),
+                                      child: const MapCircleMarker(),
                                     ),
                                   ],
                                 ),
@@ -589,61 +635,11 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                                       height: 36,
                                       child: const Icon(
                                         Icons.place_rounded,
-                                        size: 34,
+                                        size: 24,
                                         color: Colors.orange,
                                       ),
                                     ),
                                   ],
-                                ),
-                              if (_draftPath.isNotEmpty)
-                                MarkerLayer(
-                                  markers: _draftPath
-                                      .asMap()
-                                      .entries
-                                      .map((MapEntry<int, LatLng> e) {
-                                        final int idx = e.key;
-                                        final LatLng p = e.value;
-                                        final bool selected =
-                                            _selectedVertexIndex == idx;
-                                        return Marker(
-                                          point: p,
-                                          width: 28,
-                                          height: 28,
-                                          child: GestureDetector(
-                                            onTap: () {
-                                              setState(() {
-                                                _selectedVertexIndex = idx;
-                                              });
-                                            },
-                                            onLongPress: () {
-                                              setState(() {
-                                                _draftPath.removeAt(idx);
-                                                if (_selectedVertexIndex !=
-                                                    null) {
-                                                  _selectedVertexIndex = null;
-                                                }
-                                              });
-                                            },
-                                            child: CircleAvatar(
-                                              radius: selected ? 14 : 12,
-                                              backgroundColor: selected
-                                                  ? Colors.orange
-                                                  : Colors.orange.withValues(
-                                                      alpha: 0.9,
-                                                    ),
-                                              child: Text(
-                                                '${idx + 1}',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        );
-                                      })
-                                      .toList(growable: false),
                                 ),
                             ],
                           ),
@@ -653,49 +649,55 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                     const SizedBox(height: 12),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                      child: geofencesState.when(
-                        data: (List<Geofence> data) {
-                          if (data.isEmpty) {
-                            return const Padding(
-                              padding: EdgeInsets.only(top: 32),
-                              child: Text(
-                                'No hay geovallas asignadas todavia.',
-                                style: TextStyle(color: Colors.white54),
-                              ),
-                            );
-                          }
+                        child: _showEditor
+                          ? const SizedBox.shrink()
+                          : geofencesState.when(
+                              data: (List<Geofence> data) {
+                                if (data.isEmpty) {
+                                  return const Padding(
+                                    padding: EdgeInsets.only(top: 32),
+                                    child: Text(
+                                      'No hay geovallas asignadas todavia.',
+                                      style: TextStyle(color: Colors.white54),
+                                    ),
+                                  );
+                                }
 
-                          return ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: data.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 10),
-                            itemBuilder: (BuildContext context, int index) {
-                              final Geofence geofence = data[index];
-                              return GeofenceListTile(
-                                geofence: geofence,
-                                isEditing: _editingGeofenceId == geofence.id,
-                                onEdit: () => _loadForEdit(geofence),
-                                onDelete: () => _delete(geofence),
-                              );
-                            },
-                          );
-                        },
-                        loading: () => const Padding(
-                          padding: EdgeInsets.only(top: 24),
-                          child: CircularProgressIndicator(),
-                        ),
-                        error: (Object error, StackTrace _) {
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 24),
-                            child: Text(
-                              'Error cargando geovallas: $error',
-                              style: const TextStyle(color: Colors.redAccent),
+                                return ListView.separated(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  itemCount: data.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 10),
+                                  itemBuilder:
+                                      (BuildContext context, int index) {
+                                        final Geofence geofence = data[index];
+                                        return GeofenceListTile(
+                                          geofence: geofence,
+                                          isEditing:
+                                              _editingGeofenceId == geofence.id,
+                                          onEdit: () => _loadForEdit(geofence),
+                                          onDelete: () => _delete(geofence),
+                                        );
+                                      },
+                                );
+                              },
+                              loading: () => const Padding(
+                                padding: EdgeInsets.only(top: 24),
+                                child: ExpressiveIndicator(),
+                              ),
+                              error: (Object error, StackTrace _) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 24),
+                                  child: Text(
+                                    'Error cargando geovallas: $error',
+                                    style: const TextStyle(
+                                      color: Colors.redAccent,
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
-                          );
-                        },
-                      ),
                     ),
                   ],
                 ),
@@ -748,22 +750,21 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
           bottom: 150,
           right: 16,
           child: !_showEditor
-              ? FloatingActionButton.extended(
+              ? FloatingActionButton(
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.hardEdge,
                   onPressed: _startCreateMode,
-                  backgroundColor: const Color(0xFF5ADCB3),
-                  foregroundColor: const Color(0xFF131313),
-                  icon: const Icon(Icons.add_rounded),
-                  label: const Text(
-                    'Nueva geovalla',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
+                  backgroundColor: AppColors.brand,
+                  foregroundColor: AppColors.surface,
+                  child: const Icon(Icons.add_rounded, size: 24),
                 )
-              : FloatingActionButton.extended(
+              : FloatingActionButton(
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.hardEdge,
                   onPressed: _exitEditor,
-                  backgroundColor: const Color(0xFF1E1E1E),
-                  foregroundColor: Colors.white,
-                  icon: const Icon(Icons.close_rounded),
-                  label: const Text('Cerrar'),
+                  backgroundColor: AppColors.danger,
+                  foregroundColor: AppColors.surfaceContainerLowest,
+                  child: const Icon(Icons.close_rounded),
                 ),
         ),
       ],

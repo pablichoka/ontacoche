@@ -25,7 +25,7 @@ class Geofence {
   final int priority;
   final double? latitude;
   final double? longitude;
-  final double? radius; // in km
+  final double? radius; // in m
   final List<GeofencePoint> points;
 
   factory Geofence.fromJson(Map<String, dynamic> json) {

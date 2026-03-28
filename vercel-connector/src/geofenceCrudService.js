@@ -86,15 +86,41 @@ function normalizeCircleGeometry(input) {
   if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
     throw createValidationError('geometry.center.lon is invalid');
   }
-  if (!Number.isFinite(radius) || radius < 0.001 || radius > 1000) {
+  // input.radius is expected in METERS from the app; convert to kilometers
+  const radiusMeters = radius;
+  const radiusKm = Number(radiusMeters);
+
+  if (!Number.isFinite(radiusKm) || radiusKm < 0.001 || radiusKm > 1000) {
     throw createValidationError('geometry.radius is invalid');
   }
 
   return {
     type: 'circle',
     center: { lat, lon },
-    radius,
+    // Flespi expects radius in kilometers; provide km
+    radius: radiusKm,
   };
+}
+
+async function computeNextPriority(config) {
+  const response = await flespiRequest(
+    config,
+    'GET',
+    '/gw/geofences/all?fields=id,priority',
+  );
+
+  const result = Array.isArray(response.result) ? response.result : [];
+  const priorities = result
+    .map((r) => Number(r.priority))
+    .filter((n) => Number.isFinite(n) && Number.isInteger(n) && n >= 0);
+  const max = priorities.length > 0 ? Math.max(...priorities) : -1;
+  const next = max + 1;
+  // priorities assigned by system must be 0..99; 100 reserved for parking
+  if (next >= 100) {
+    const err = createValidationError('no free priority available', 409);
+    throw err;
+  }
+  return next;
 }
 
 function normalizePolygonGeometry(input) {
@@ -262,18 +288,25 @@ async function createCircleGeofence(config, input) {
   if (!name) {
     throw createValidationError('name is required');
   }
+  let priority;
+  if (input.priority != null) {
+    priority = normalizePriority(input.priority);
+    await ensureUniquePriority(config, priority);
+  } else {
+    priority = await computeNextPriority(config);
+  }
 
-  const priority = normalizePriority(input.priority);
   const geometry = normalizeCircleGeometry(input.geometry);
   const deviceSelector = normalizeDeviceSelector(input, config);
 
-  await ensureUniquePriority(config, priority);
+  const body = { name, enabled: true, geometry };
+  if (priority != null) body.priority = priority;
 
   const created = await flespiRequest(
     config,
     'POST',
     '/gw/geofences?fields=id,name,enabled,priority,geometry',
-    [{ name, priority, enabled: true, geometry }],
+    [body],
   );
 
   const geofence = Array.isArray(created.result) && created.result.length > 0
@@ -300,9 +333,6 @@ async function createGeofence(config, input) {
   if (!name) {
     throw createValidationError('name is required');
   }
-
-  const priority = normalizePriority(input.priority);
-
   let geometry;
   if (!input.geometry || typeof input.geometry !== 'object') {
     throw createValidationError('geometry is required');
@@ -319,13 +349,22 @@ async function createGeofence(config, input) {
 
   const deviceSelector = normalizeDeviceSelector(input, config);
 
-  await ensureUniquePriority(config, priority);
+  let priority;
+  if (input.priority != null) {
+    priority = normalizePriority(input.priority);
+    await ensureUniquePriority(config, priority);
+  } else {
+    priority = await computeNextPriority(config);
+  }
+
+  const body = { name, enabled: true, geometry };
+  if (priority != null) body.priority = priority;
 
   const created = await flespiRequest(
     config,
     'POST',
     '/gw/geofences?fields=id,name,enabled,priority,geometry',
-    [{ name, priority, enabled: true, geometry }],
+    [body],
   );
 
   const geofence = Array.isArray(created.result) && created.result.length > 0
@@ -362,11 +401,7 @@ async function updateCircleGeofence(config, geofenceId, input) {
     patch.name = name;
   }
 
-  if (input.priority != null) {
-    const priority = normalizePriority(input.priority);
-    await ensureUniquePriority(config, priority, id);
-    patch.priority = priority;
-  }
+  // Do not allow editing priority via this endpoint; priority is managed by the system
 
   if (input.geometry != null) {
     patch.geometry = normalizeCircleGeometry(input.geometry);
@@ -410,11 +445,7 @@ async function updateGeofence(config, geofenceId, input) {
     patch.name = name;
   }
 
-  if (input.priority != null) {
-    const priority = normalizePriority(input.priority);
-    await ensureUniquePriority(config, priority, id);
-    patch.priority = priority;
-  }
+  // Do not allow editing priority via this endpoint; priority is managed by the system
 
   if (input.geometry != null) {
     const gtype = String(input.geometry.type || '').trim().toLowerCase();

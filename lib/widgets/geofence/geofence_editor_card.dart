@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:ontacoche/theme/app_colors.dart';
+import 'package:ontacoche/widgets/expressive_indicator.dart';
+import 'package:ontacoche/widgets/app_text_field.dart';
 import '../../models/geofence.dart';
 
 class GeofenceEditorCard extends StatelessWidget {
   final int? editingGeofenceId;
   final GeofenceType editorType;
   final TextEditingController nameController;
-  final TextEditingController priorityController;
   final TextEditingController radiusController;
+  final String radiusUnit;
+  final ValueChanged<String?> onUnitChanged;
   final bool isDrawingPolygon;
   final bool isPickingCenter;
   final List<LatLng> draftPath;
@@ -24,8 +28,9 @@ class GeofenceEditorCard extends StatelessWidget {
     required this.editingGeofenceId,
     required this.editorType,
     required this.nameController,
-    required this.priorityController,
     required this.radiusController,
+    required this.radiusUnit,
+    required this.onUnitChanged,
     required this.isDrawingPolygon,
     required this.isPickingCenter,
     required this.draftPath,
@@ -59,11 +64,11 @@ class GeofenceEditorCard extends StatelessWidget {
           Text(
             editingGeofenceId == null
                 ? (editorType == GeofenceType.circle
-                      ? 'CREAR GEOVALLA CIRCULAR'
-                      : 'CREAR GEOVALLA POLIGONAL')
+                      ? 'Crear geovalla circular'
+                      : 'Crear geovalla poligonal')
                 : (editorType == GeofenceType.circle
-                      ? 'EDITAR GEOVALLA CIRCULAR'
-                      : 'EDITAR GEOVALLA POLIGONAL'),
+                      ? 'Editar geovalla circular'
+                      : 'Editar geovalla poligonal'),
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -72,34 +77,44 @@ class GeofenceEditorCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          TextField(
+          AppTextField(
             controller: nameController,
-            style: const TextStyle(color: Colors.white),
-            decoration: _inputDecoration('Nombre'),
+            hintText: 'Nombre',
+            keyboardType: TextInputType.text,
           ),
           const SizedBox(height: 12),
           Row(
             children: <Widget>[
-              Expanded(
-                child: TextField(
-                  controller: priorityController,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: _inputDecoration('Prioridad (0-100)'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              if (editorType == GeofenceType.circle)
+              if (editorType == GeofenceType.circle) ...[
                 Expanded(
-                  child: TextField(
+                  child: AppTextField(
                     controller: radiusController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    style: const TextStyle(color: Colors.white),
-                    decoration: _inputDecoration('Radio (km)'),
+                    hintText: 'Radio',
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   ),
                 ),
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: DropdownButton<String>(
+                    value: radiusUnit,
+                    dropdownColor: const Color(0xFF131313),
+                    underline: const SizedBox.shrink(),
+                    items: const [
+                      DropdownMenuItem(value: 'km', child: Text('km')),
+                      DropdownMenuItem(value: 'hm', child: Text('hm')),
+                      DropdownMenuItem(value: 'm', child: Text('m')),
+                    ],
+                    onChanged: onUnitChanged,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 16),
@@ -181,7 +196,7 @@ class GeofenceEditorCard extends StatelessWidget {
                   ],
                 ],
               ),
-              FilledButton.icon(
+              IconButton(
                 onPressed: isSaving ? null : onSave,
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF5ADCB3),
@@ -194,16 +209,12 @@ class GeofenceEditorCard extends StatelessWidget {
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(
+                        child: ExpressiveIndicator(
                           strokeWidth: 2,
-                          color: Color(0xFF131313),
+                          color: AppColors.brand,
                         ),
                       )
                     : const Icon(Icons.save_rounded, size: 20),
-                label: const Text(
-                  'Guardar',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
               ),
             ],
           ),

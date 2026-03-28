@@ -47,14 +47,20 @@ class HistoryScreen extends ConsumerWidget {
                   ),
                 );
               },
-              loading: () => const Center(child: ExpressiveIndicator(size: 40, strokeWidth: 5,)),
+              loading: () => const Center(
+                child: ExpressiveIndicator(size: 40, strokeWidth: 5),
+              ),
               error: (Object error, StackTrace stackTrace) => Center(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: <Widget>[
-                      const Icon(Icons.route_rounded, size: 48, color: Colors.grey),
+                      const Icon(
+                        Icons.route_rounded,
+                        size: 48,
+                        color: Colors.grey,
+                      ),
                       const SizedBox(height: 12),
                       Text(
                         'No se pudo cargar los trayectos',
@@ -76,45 +82,71 @@ class HistoryScreen extends ConsumerWidget {
             right: 16,
             bottom: 150,
             child: FloatingActionButton(
+              shape: const CircleBorder(),
+              clipBehavior: Clip.hardEdge,
               backgroundColor: Colors.redAccent,
               onPressed: () async {
                 final bool? confirmed = await showDialog<bool>(
                   context: context,
                   builder: (context) => AlertDialog(
                     title: const Text('Borrar trayectos'),
-                    content: const Text('¿Eliminar todos los trayectos del servidor? Esta acción es irreversible.'),
+                    content: const Text(
+                      '¿Eliminar todos los trayectos del servidor? Esta acción es irreversible.',
+                    ),
                     actions: [
-                      TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
-                      TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Eliminar')),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Cancelar'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text('Eliminar'),
+                      ),
                     ],
                   ),
                 );
 
                 if (confirmed != true) return;
 
+                FocusScope.of(context).unfocus();
+
                 showDialog<void>(
                   context: context,
                   barrierDismissible: false,
-                  builder: (_) => const Center(child: CircularProgressIndicator()),
+                  useRootNavigator: true,
+                  builder: (_) => WillPopScope(
+                    onWillPop: () async => false,
+                    child: const Dialog(
+                      backgroundColor: Colors.transparent,
+                      elevation: 0,
+                      child: Center(child: ExpressiveIndicator()),
+                    ),
+                  ),
                 );
 
                 try {
                   final service = ref.read(vercelConnectorServiceProvider);
                   final String deviceId = ref.read(deviceIdentProvider).trim();
-                  final int deleted = await service.deleteTripsForDevice(deviceId);
+                  final int deleted = await service.deleteTripsForDevice(
+                    deviceId,
+                  );
                   ref.invalidate(tripsProvider);
-                  Navigator.of(context).pop(); // close progress
+                  Navigator.of(context, rootNavigator: true).pop(); // close progress
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Eliminados $deleted trayectos')),
                   );
                 } catch (e) {
-                  Navigator.of(context).pop();
+                  Navigator.of(context, rootNavigator: true).pop();
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Error al eliminar: $e')),
                   );
                 }
               },
-              child: const Icon(Icons.delete_rounded),
+              child: const Icon(
+                Icons.delete_rounded,
+                color: Colors.white,
+                size: 24,
+              ),
             ),
           ),
         ],

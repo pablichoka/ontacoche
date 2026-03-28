@@ -299,10 +299,9 @@ class VercelConnectorService {
   Future<Geofence> createCircleGeofence({
     required String deviceId,
     required String name,
-    required int priority,
     required double latitude,
     required double longitude,
-    required double radiusKm,
+    required double radiusMeters,
   }) async {
     final Uri uri = Uri.parse('$baseUrl/api/geofences');
     final http.Response response = await _client.post(
@@ -311,11 +310,12 @@ class VercelConnectorService {
       body: jsonEncode(<String, dynamic>{
         'device_id': deviceId,
         'name': name,
-        'priority': priority,
+        // priority is assigned by the server when not provided
         'geometry': <String, dynamic>{
           'type': 'circle',
           'center': <String, dynamic>{'lat': latitude, 'lon': longitude},
-          'radius': radiusKm,
+          // send radius in meters; backend converts to km for Flespi
+          'radius': radiusMeters,
         },
       }),
     );
@@ -343,7 +343,6 @@ class VercelConnectorService {
   Future<Geofence> createPolygonGeofence({
     required String deviceId,
     required String name,
-    required int priority,
     required List<Map<String, double>> path,
   }) async {
     final Uri uri = Uri.parse('$baseUrl/api/geofences');
@@ -353,7 +352,7 @@ class VercelConnectorService {
       body: jsonEncode(<String, dynamic>{
         'device_id': deviceId,
         'name': name,
-        'priority': priority,
+        // priority is assigned by the server when not provided
         'geometry': <String, dynamic>{'type': 'polygon', 'path': path},
       }),
     );
@@ -381,10 +380,9 @@ class VercelConnectorService {
   Future<Geofence> updateCircleGeofence({
     required int geofenceId,
     required String name,
-    required int priority,
     required double latitude,
     required double longitude,
-    required double radiusKm,
+    required double radiusMeters,
   }) async {
     final Uri uri = Uri.parse('$baseUrl/api/geofences/$geofenceId');
     final http.Response response = await _client.patch(
@@ -392,11 +390,11 @@ class VercelConnectorService {
       headers: _writeHeaders(),
       body: jsonEncode(<String, dynamic>{
         'name': name,
-        'priority': priority,
         'geometry': <String, dynamic>{
           'type': 'circle',
           'center': <String, dynamic>{'lat': latitude, 'lon': longitude},
-          'radius': radiusKm,
+          // send radius in meters; backend will not accept priority changes
+          'radius': radiusMeters,
         },
       }),
     );
@@ -424,7 +422,6 @@ class VercelConnectorService {
   Future<Geofence> updatePolygonGeofence({
     required int geofenceId,
     required String name,
-    required int priority,
     required List<Map<String, double>> path,
   }) async {
     final Uri uri = Uri.parse('$baseUrl/api/geofences/$geofenceId');
@@ -433,7 +430,6 @@ class VercelConnectorService {
       headers: _writeHeaders(),
       body: jsonEncode(<String, dynamic>{
         'name': name,
-        'priority': priority,
         'geometry': <String, dynamic>{'type': 'polygon', 'path': path},
       }),
     );
