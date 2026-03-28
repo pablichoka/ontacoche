@@ -96,16 +96,12 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
                 snapshot.docs.first;
 
             final Map<String, dynamic>? selectedData = selected.data();
+            // Only consider nested `device.id` when resolving device identifier.
             final String resolvedDeviceId = configuredDeviceId.isNotEmpty
-              ? configuredDeviceId
-              : (
-                // prefer nested device.id, then legacy device_id, then doc id
-                (selectedData != null && selectedData['device'] is Map && (selectedData['device']['id'] ?? '').toString().isNotEmpty)
-                  ? selectedData['device']['id'].toString()
-                  : ((selectedData?['device_id'] ?? '').toString().isNotEmpty
-                    ? selectedData!['device_id'].toString()
-                    : selected.id)
-                );
+                ? configuredDeviceId
+                : ((selectedData != null && selectedData['device'] is Map && (selectedData['device']['id'] ?? '').toString().isNotEmpty)
+                    ? selectedData['device']['id'].toString()
+                    : selected.id);
 
             unawaited(_handleRealtimeSnapshot(selected, resolvedDeviceId));
           },

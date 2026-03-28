@@ -304,15 +304,13 @@ Stream<List<DeviceAlert>> _watchFirestoreAlerts(Ref ref) async* {
           })
           .toList(growable: false);
 
+      // Only match by nested `device.id` — no legacy fallbacks
       final List<Map<String, dynamic>> sourceItems = deviceId.isEmpty
           ? allItems
           : allItems
                 .where((Map<String, dynamic> item) {
-                  // support new nested `device.id` and legacy top-level `device_id`
                   final dynamic deviceField = item['device'];
-                  final Object? rawId = (deviceField is Map)
-                      ? deviceField['id']
-                      : item['device_id'];
+                  final Object? rawId = (deviceField is Map) ? deviceField['id'] : null;
                   if (rawId == null) {
                     return false;
                   }

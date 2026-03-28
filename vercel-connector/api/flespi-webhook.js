@@ -492,8 +492,7 @@ function buildStateSnapshot(event, classification, config) {
       voltage: batteryVoltage == null ? null : Number(batteryVoltage),
     },
     communication_active: Boolean(classification.communicationActive),
-    device_id: event.deviceId,
-    device: { name: deviceName || null },
+    device: { id: event.deviceId ? String(event.deviceId) : null, name: deviceName || null },
     position,
     source_ts_ms: sourceTsMs,
     source_ts: formatIsoInZone(sourceTsMs, (config && config.timezone) || 'UTC'),
@@ -522,14 +521,12 @@ async function persistEvent({ firestore, config, event, classification }) {
 
   const snapshot = buildStateSnapshot(event, effectiveClassification, config);
 
-    if (classification.communicationActive || currentGeofenceStatus != null) {
-    // overwrite last state document to remove legacy top-level fields
+    // overwrite last state document to ensure `device.id` nested shape
     await stateRef.set(snapshot);
 
     if (config.storeStateHistory) {
       await firestore.collection(config.stateHistoryCollection).add(snapshot);
     }
-  }
 
   if (effectiveClassification.vibrationAlarm || effectiveClassification.geofenceAlarm) {
     const dedupeBucket = effectiveClassification.vibrationAlarm
