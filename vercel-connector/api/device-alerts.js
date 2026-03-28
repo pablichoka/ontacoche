@@ -51,12 +51,22 @@ function maybeAuthorize(req) {
 }
 
 module.exports = async function handler(req, res) {
-  if (req.method !== 'GET' && req.method !== 'POST') {
+  if (req.method !== 'GET' && req.method !== 'POST' && req.method !== 'DELETE') {
     return res.status(405).json({ ok: false, error: 'method not allowed' });
   }
 
-  if (!maybeAuthorize(req)) {
-    return res.status(401).json({ ok: false, error: 'unauthorized' });
+  if (req.method === 'GET' || req.method === 'POST') {
+    if (!maybeAuthorize(req)) {
+      return res.status(401).json({ ok: false, error: 'unauthorized' });
+    }
+  } else if (req.method === 'DELETE') {
+    const expectedWrite = (process.env.VERCEL_CONNECTOR_WRITE_BEARER || process.env.APP_WRITE_BEARER || '').trim();
+    if (expectedWrite) {
+      const auth = req.headers.authorization || '';
+      if (auth !== `Bearer ${expectedWrite}`) {
+        return res.status(401).json({ ok: false, error: 'unauthorized' });
+      }
+    }
   }
 
   const body = req.body && typeof req.body === 'object' ? req.body : {};
@@ -92,6 +102,31 @@ module.exports = async function handler(req, res) {
 
     const snapshot = await query.get();
     let alerts = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    if (req.method === 'DELETE') {
+      // delete all alerts returned for this device
+      const docs = snapshot.docs;
+      let deleted = 0;
+      if (docs.length > 0) {
+        let batch = firestore.batch();
+        let ops = 0;
+        for (const d of docs) {
+          batch.delete(d.ref);
+          ops += 1;
+          deleted += 1;
+          if (ops >= 450) {
+            await batch.commit();
+            batch = firestore.batch();
+            ops = 0;
+          }
+        }
+        if (ops > 0) {
+          await batch.commit();
+        }
+      }
+
+      return res.status(200).json({ ok: true, device_id: deviceId, deleted });
+    }
 
     // Sort by `source_ts` (ISO) descending in memory and apply requested limit
     alerts = alerts

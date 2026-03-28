@@ -140,6 +140,24 @@ class VercelConnectorService {
         .toList(growable: false);
   }
 
+  Future<int> deleteDeviceAlertsForDevice(String deviceId) async {
+    final Uri uri = Uri.parse('$baseUrl/api/device-alerts?device_id=$deviceId');
+    final Map<String, String> headers = _writeHeaders();
+
+    final http.Response response = await _client.delete(uri, headers: headers);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw VercelConnectorException(
+        statusCode: response.statusCode,
+        message: response.body,
+      );
+    }
+
+    final Map<String, dynamic> payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final Object? deleted = payload['deleted'];
+    if (deleted is num) return deleted.toInt();
+    return int.tryParse(deleted?.toString() ?? '') ?? 0;
+  }
+
   Future<int> markAlertsChecked(
     String deviceId, {
     List<String>? alertIds,
@@ -257,6 +275,24 @@ class VercelConnectorService {
         .whereType<Map>()
         .map((m) => Map<String, dynamic>.from(m as Map))
         .toList(growable: false);
+  }
+
+  Future<int> deleteTripsForDevice(String deviceId) async {
+    final Uri uri = Uri.parse('$baseUrl/api/trips?device_id=$deviceId');
+    final Map<String, String> headers = _writeHeaders();
+
+    final http.Response response = await _client.delete(uri, headers: headers);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw VercelConnectorException(
+        statusCode: response.statusCode,
+        message: response.body,
+      );
+    }
+
+    final Map<String, dynamic> payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final Object? deleted = payload['deleted'];
+    if (deleted is num) return deleted.toInt();
+    return int.tryParse(deleted?.toString() ?? '') ?? 0;
   }
 
 

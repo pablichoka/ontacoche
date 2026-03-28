@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/vehicle_state_provider.dart';
 import '../models/device_alert.dart';
+import '../providers/api_provider.dart';
 import '../theme/app_colors.dart';
 
 class AlertsScreen extends ConsumerWidget {
@@ -25,89 +26,141 @@ class AlertsScreen extends ConsumerWidget {
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
-      body: alertsState.when(
-        data: (List<DeviceAlert> alerts) {
-          if (alerts.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.notifications_off_rounded,
-                    size: 48,
-                    color: AppColors.muted,
-                  ),
-                  const SizedBox(height: 16),
-                  const Text('No hay alertas recientes'),
-                ],
-              ),
-            );
-          }
-
-          final List<_AlertGroup> groups = _groupAlertsByDay(alerts);
-
-          return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 200),
-            itemCount: groups.length,
-            itemBuilder: (BuildContext context, int index) {
-              final _AlertGroup group = groups[index];
-              return Padding(
-                padding: EdgeInsets.only(
-                  bottom: index == groups.length - 1 ? 0 : 20,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4, bottom: 10),
-                      child: Text(
-                        group.label,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.6,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: alertsState.when(
+              data: (List<DeviceAlert> alerts) {
+                if (alerts.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.notifications_off_rounded,
+                          size: 48,
                           color: AppColors.muted,
                         ),
-                      ),
+                        const SizedBox(height: 16),
+                        const Text('No hay alertas recientes'),
+                      ],
                     ),
-                    ...group.alerts.map(
-                      (DeviceAlert alert) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _AlertCard(alert: alert),
+                  );
+                }
+
+                final List<_AlertGroup> groups = _groupAlertsByDay(alerts);
+
+                return ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 200),
+                  itemCount: groups.length,
+                  itemBuilder: (BuildContext context, int index) {
+                    final _AlertGroup group = groups[index];
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        bottom: index == groups.length - 1 ? 0 : 20,
                       ),
-                    ),
-                  ],
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4, bottom: 10),
+                            child: Text(
+                              group.label,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.6,
+                                color: AppColors.muted,
+                              ),
+                            ),
+                          ),
+                          ...group.alerts.map(
+                            (DeviceAlert alert) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _AlertCard(alert: alert),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (err, stack) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      const Icon(
+                        Icons.notifications_off_rounded,
+                        size: 48,
+                        color: AppColors.muted,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'No se pudieron cargar las alertas',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () => ref.invalidate(alertsHistoryProvider),
+                        child: const Text('Reintentar'),
+                      ),
+                    ],
+                  ),
                 ),
-              );
-            },
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, stack) => Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                const Icon(
-                  Icons.notifications_off_rounded,
-                  size: 48,
-                  color: AppColors.muted,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'No se pudieron cargar las alertas',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => ref.invalidate(alertsHistoryProvider),
-                  child: const Text('Reintentar'),
-                ),
-              ],
+              ),
             ),
           ),
-        ),
+
+          Positioned(
+            right: 16,
+            bottom: 150,
+            child: FloatingActionButton(
+              backgroundColor: Colors.redAccent,
+              onPressed: () async {
+                final bool? confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Borrar alertas'),
+                    content: const Text('¿Eliminar todas las alertas del servidor? Esta acción es irreversible.'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
+                      TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Eliminar')),
+                    ],
+                  ),
+                );
+
+                if (confirmed != true) return;
+
+                showDialog<void>(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (_) => const Center(child: CircularProgressIndicator()),
+                );
+
+                try {
+                  final service = ref.read(vercelConnectorServiceProvider);
+                  final String deviceId = ref.read(deviceIdentProvider).trim();
+                  final int deleted = await service.deleteDeviceAlertsForDevice(deviceId);
+                  ref.invalidate(alertsHistoryProvider);
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Eliminadas $deleted alertas')),
+                  );
+                } catch (e) {
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error al eliminar: $e')),
+                  );
+                }
+              },
+              child: const Icon(Icons.delete_rounded),
+            ),
+          ),
+        ],
       ),
     );
   }
