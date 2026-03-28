@@ -429,7 +429,7 @@ function classifyEvent(event, config) {
 
   if (vibrationAlarm) {
     title = 'Alerta de vibración';
-    body = 'Se detecto vibración en el tracker';
+    body = 'Se detectó vibración en el tracker';
     severity = 'high';
   } else if (geofenceAlarm) {
     title = 'Alerta de geocerca';

@@ -37,12 +37,23 @@ final positionStreamProvider = StreamProvider<DevicePosition>((Ref ref) {
   return _pollLatestPosition(ref, service);
 });
 
-final alertsHistoryProvider = StreamProvider<List<DeviceAlert>>((Ref ref) {
-  return _watchFirestoreAlerts(ref);
+final alertsHistoryProvider = FutureProvider<List<DeviceAlert>>((Ref ref) async {
+  final String deviceId = (dotenv.env['DEVICE_ID'] ?? '').trim();
+  if (deviceId.isEmpty) return const <DeviceAlert>[];
+
+  try {
+    final List<DeviceAlert> alerts = await ref
+        .read(vercelConnectorServiceProvider)
+        .getDeviceAlerts(deviceId, limit: 100);
+    return _dedupeAlerts(alerts)
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+  } catch (_) {
+    return const <DeviceAlert>[];
+  }
 });
 
 final alertStreamProvider = StreamProvider<DeviceAlert>((Ref ref) async* {
-  await for (final List<DeviceAlert> alerts in _watchFirestoreAlerts(ref)) {
+  await for (final List<DeviceAlert> alerts in _pollBackendAlertsFallback(ref)) {
     if (alerts.isNotEmpty) {
       yield alerts.first;
     }

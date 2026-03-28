@@ -85,21 +85,22 @@ module.exports = async function handler(req, res) {
     }));
     // Prefer server-side filtering to avoid reading the whole collection.
     // If device_id can be stored as number or string, query for both when numeric.
-    // Only query by nested `device.id` (no backward-compat fallbacks)
-    const query = /^\d+$/.test(deviceId)
-      ? firestore
-          .collection(alertsCollection)
-          .where('device.id', 'in', [deviceId, Number(deviceId)])
-          .orderBy('source_ts_ms', 'desc')
-          .limit(limit)
-      : firestore
-          .collection(alertsCollection)
-          .where('device.id', '==', deviceId)
-          .orderBy('source_ts_ms', 'desc')
-          .limit(limit);
+    // Query by nested `device.id` without ordering to avoid requiring composite index.
+    // We'll sort by `source_ts` in memory (backend) and return a limited set.
+    const query = firestore.collection(alertsCollection).where('device.id', '==', deviceId).limit(1000);
 
     const snapshot = await query.get();
-    const alerts = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    let alerts = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    // Sort by `source_ts` (ISO) descending in memory and apply requested limit
+    alerts = alerts
+      .filter((a) => a && a.source_ts)
+      .sort((x, y) => {
+        const tx = Date.parse(String(x.source_ts) || '') || 0;
+        const ty = Date.parse(String(y.source_ts) || '') || 0;
+        return ty - tx;
+      })
+      .slice(0, limit);
 
     if (req.method === 'POST') {
       const alertIds = Array.isArray(body.alert_ids)
