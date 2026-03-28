@@ -551,6 +551,11 @@ async function persistEvent({ firestore, config, event, classification }) {
       const existingPos = existingData.position || {};
       const newPos = writeSnapshot.position || {};
       
+      if (newPos.latitude == null || newPos.longitude == null) {
+        writeSnapshot.position = existingPos;
+        Object.assign(newPos, existingPos);
+      }
+      
       const identicalPos = 
         existingPos.latitude === newPos.latitude && 
         existingPos.longitude === newPos.longitude &&
@@ -686,6 +691,7 @@ async function persistEvent({ firestore, config, event, classification }) {
       dedupeKey,
       eventKind: alertKind,
       classification: effectiveClassification,
+      skippedStateWrite: skipStateWrite,
     };
   }
 
@@ -721,6 +727,7 @@ async function persistEvent({ firestore, config, event, classification }) {
       dedupeKey: geofenceChangeId,
       eventKind: 'geofence_config_change',
       classification: effectiveClassification,
+      skippedStateWrite: skipStateWrite,
     };
   }
 
@@ -729,6 +736,7 @@ async function persistEvent({ firestore, config, event, classification }) {
     dedupeKey: null,
     eventKind: null,
     classification: effectiveClassification,
+    skippedStateWrite: skipStateWrite,
   };
 }
 
@@ -865,15 +873,17 @@ module.exports = async function handler(req, res) {
       if (event.deviceId) {
         const tripSnapshot = buildStateSnapshot(event, classification, config);
 
-        const [persistedRes] = await Promise.all([
-          persistEvent({
-            firestore,
-            config,
-            event,
-            classification,
-          }),
-          processTripPoint({ firestore, config, deviceId: event.deviceId, snapshot: tripSnapshot }),
-        ]);
+        const persistedRes = await persistEvent({
+          firestore,
+          config,
+          event,
+          classification,
+        });
+
+        // Add to trip only if a state write actually happened AND coords are valid.
+        if (!persistedRes.skippedStateWrite && tripSnapshot.position?.latitude != null && tripSnapshot.position?.longitude != null) {
+          await processTripPoint({ firestore, config, deviceId: event.deviceId, snapshot: tripSnapshot });
+        }
         
         persistenceResult = persistedRes;
         persisted += 1;
