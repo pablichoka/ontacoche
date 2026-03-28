@@ -221,7 +221,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                             .firstOrNull;
 
                         if (parking == null) {
-                          if (!mounted) return;
+                          if (!context.mounted) return;
                           ScaffoldMessenger.of(context).hideCurrentSnackBar();
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -237,7 +237,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                               .read(vercelConnectorServiceProvider)
                               .deleteGeofence(parking.id);
 
-                          if (!mounted) return;
+                          if (!context.mounted) return;
 
                           ref.invalidate(managedGeofencesProvider);
                           ref.invalidate(deviceGeofencesProvider);
@@ -261,8 +261,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                             ),
                           );
                         } finally {
-                          if (mounted)
+                          if (context.mounted) {
                             setState(() => _isParkingDeleting = false);
+                          }
                         }
                       },
                       child: _isParkingDeleting
@@ -309,7 +310,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                       );
 
                       if (hasParkingActual) {
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).hideCurrentSnackBar();
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -365,7 +366,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                           // fallback to default
                           radiusMeters = 100.0;
                         }
-                        
 
                         await ref
                             .read(vercelConnectorServiceProvider)
@@ -380,7 +380,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                         ref.invalidate(managedGeofencesProvider);
                         ref.invalidate(deviceGeofencesProvider);
 
-                        if (!mounted) return;
+                        if (!context.mounted) return;
 
                         ScaffoldMessenger.of(context).hideCurrentSnackBar();
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -401,7 +401,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                           ),
                         );
                       } finally {
-                        if (mounted) setState(() => _isParkingCreating = false);
+                        if (context.mounted) {
+                          setState(() => _isParkingCreating = false);
+                        }
                       }
                     },
                     child: _isParkingCreating
@@ -431,7 +433,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     }
 
     return <Marker>[
-      Marker(point: center, width: 48, height: 48, child: const MapCircleMarker()),
+      Marker(
+        point: center,
+        width: 48,
+        height: 48,
+        child: const MapCircleMarker(),
+      ),
     ];
   }
 
@@ -445,7 +452,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               geofence.radius != null,
         )
         .map((Geofence geofence) {
-          debugPrint('map geofence id=${geofence.id} name=${geofence.name} radius_m=${geofence.radius}');
+          debugPrint(
+            'map geofence id=${geofence.id} name=${geofence.name} radius_m=${geofence.radius}',
+          );
           return CircleMarker(
             point: LatLng(geofence.latitude!, geofence.longitude!),
             // `geofence.radius` is in meters
@@ -455,7 +464,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             borderColor: Colors.blue,
             borderStrokeWidth: 2,
           );
-        }).toList(growable: false);
+        })
+        .toList(growable: false);
   }
 
   List<Polygon> _buildGeofencePolygons(List<Geofence> geofences) {

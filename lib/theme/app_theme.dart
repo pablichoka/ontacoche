@@ -10,7 +10,6 @@ abstract final class AppTheme {
       surface: AppColors.surface,
       primary: AppColors.brand,
       secondary: AppColors.secondary,
-      background: AppColors.background,
     );
 
     return ThemeData(

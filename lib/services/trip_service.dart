@@ -5,7 +5,7 @@ import '../models/trip.dart';
 
 class TripService {
   TripService({String? collectionName})
-      : _collectionName = collectionName ?? 'trips';
+    : _collectionName = collectionName ?? 'trips';
 
   final String _collectionName;
 
@@ -19,9 +19,7 @@ class TripService {
               .get();
 
       final List<Trip> trips = snapshot.docs
-          .map(
-            (doc) => Trip.fromFirestore(doc.id, doc.data()),
-          )
+          .map((doc) => Trip.fromFirestore(doc.id, doc.data()))
           .toList(); // CUIDADO: Quitado el growable: false para permitir el sort()
 
       // Sort client-side by startTime descending to avoid requiring a
@@ -54,14 +52,14 @@ class TripService {
             final List<Trip> trips = snapshot.docs
                 .map((doc) => Trip.fromFirestore(doc.id, doc.data()))
                 .toList(); // Sin growable: false para permitir reordenar
-            
+
             trips.sort((a, b) => b.startTime.compareTo(a.startTime));
             return trips;
           } catch (e, st) {
             // Error en el mapeo (ej. datos corruptos en el documento)
             // ignore: avoid_print
             print('TripService.watchTrips mapping error: $e\n$st');
-            throw e; // Lanza para que el UI muestre el estado de error
+            rethrow; // Lanza para que el UI muestre el estado de error
           }
         });
   }

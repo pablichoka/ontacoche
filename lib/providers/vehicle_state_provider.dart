@@ -471,14 +471,12 @@ final alertsHistoryProvider = StreamProvider<List<DeviceAlert>>((
   }
 });
 
-final alertStreamProvider = StreamProvider<DeviceAlert>((Ref ref) async* {
-  await for (final List<DeviceAlert> alerts in ref.watch(
-    alertsHistoryProvider.stream,
-  )) {
-    if (alerts.isNotEmpty) {
-      yield alerts.first;
-    }
-  }
+final alertStreamProvider = Provider<AsyncValue<DeviceAlert>>((Ref ref) {
+  final alertsAsync = ref.watch(alertsHistoryProvider);
+  return alertsAsync.whenData((alerts) {
+    if (alerts.isNotEmpty) return alerts.first;
+    throw StateError('No alerts');
+  });
 });
 
 final persistAlertUseCaseProvider =

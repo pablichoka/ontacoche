@@ -154,6 +154,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                       );
 
                       if (confirmed != true) return;
+                      if (!context.mounted) return;
 
                       FocusScope.of(context).unfocus();
                       setState(() => _isDeleting = true);
@@ -168,14 +169,14 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                         final int deleted = await service
                             .deleteDeviceAlertsForDevice(deviceId);
                         ref.invalidate(alertsHistoryProvider);
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('Eliminadas $deleted alertas'),
                           ),
                         );
                       } catch (e) {
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('Error al eliminar: $e')),
                         );

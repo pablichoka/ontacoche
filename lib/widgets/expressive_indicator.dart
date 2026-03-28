@@ -51,7 +51,7 @@ class _ExpressiveIndicatorState extends State<ExpressiveIndicator>
         child: CircularProgressIndicator(
           strokeWidth: widget.strokeWidth,
           valueColor: AlwaysStoppedAnimation<Color>(widget.color),
-          backgroundColor: widget.color.withOpacity(0.24),
+          backgroundColor: widget.color.withValues(alpha: 0.24),
         ),
       ),
     );

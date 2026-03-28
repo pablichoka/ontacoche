@@ -116,6 +116,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       );
 
                       if (confirmed != true) return;
+                      if (!context.mounted) return;
 
                       FocusScope.of(context).unfocus();
                       setState(() => _isDeleting = true);
@@ -131,14 +132,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                           deviceId,
                         );
                         ref.invalidate(tripsProvider);
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('Eliminados $deleted trayectos'),
                           ),
                         );
                       } catch (e) {
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('Error al eliminar: $e')),
                         );

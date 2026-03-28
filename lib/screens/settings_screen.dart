@@ -71,39 +71,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       await service.updateDeviceName(selector, newName);
 
-      if (mounted) FocusScope.of(context).unfocus();
+      if (!mounted) return;
+      FocusScope.of(context).unfocus();
 
-      if (mounted) {
-        // show a simple dialog informing about visibility delay
-        await showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Nombre actualizado'),
-            content: const Text(
-              'El nombre se ha actualizado en el servidor. '
-              'Puede que no veas el cambio hasta que reinicies la app o el tracker envíe nueva actividad.',
+      // show a simple dialog informing about visibility delay
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Nombre actualizado'),
+          content: const Text(
+            'El nombre se ha actualizado en el servidor. '
+            'Puede que no veas el cambio hasta que reinicies la app o el tracker envíe nueva actividad.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-        );
+          ],
+        ),
+      );
 
-        ref.invalidate(deviceDetailsProvider);
-        _isNameInitialized = false;
-      }
+      ref.invalidate(deviceDetailsProvider);
+      _isNameInitialized = false;
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.fixed,
-            content: Text('Error al actualizar: $e'),
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.fixed,
+          content: Text('Error al actualizar: $e'),
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -205,7 +203,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                       controller: _parkingController,
                                       focusNode: _parkingFocusNode,
                                       hintText: '100',
-                                      keyboardType: const TextInputType.numberWithOptions(decimal: false),
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                            decimal: false,
+                                          ),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -235,10 +236,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                         ref.invalidate(
                                           settingsRepositoryProvider,
                                         );
-                                        if (mounted) {
+                                        if (context.mounted) {
                                           FocusScope.of(context).unfocus();
                                         }
-                                        if (mounted) {
+                                        if (context.mounted) {
                                           ScaffoldMessenger.of(
                                             context,
                                           ).showSnackBar(
@@ -250,7 +251,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                           );
                                         }
                                       } catch (e) {
-                                        if (mounted) {
+                                        if (context.mounted) {
                                           ScaffoldMessenger.of(
                                             context,
                                           ).showSnackBar(

@@ -132,17 +132,21 @@ final vercelConnectorServiceProvider = Provider<VercelConnectorService>((
   return service;
 });
 
-final deviceRawStateProvider = FutureProvider<Map<String, dynamic>?>(
-  (Ref ref) async {
-    final String deviceId = ref.watch(deviceIdentProvider).trim();
-    if (deviceId.isEmpty) return null;
-    final VercelConnectorService service = ref.watch(vercelConnectorServiceProvider);
-    return service.getDeviceStateMap(deviceId);
-  },
-);
+final deviceRawStateProvider = FutureProvider<Map<String, dynamic>?>((
+  Ref ref,
+) async {
+  final String deviceId = ref.watch(deviceIdentProvider).trim();
+  if (deviceId.isEmpty) return null;
+  final VercelConnectorService service = ref.watch(
+    vercelConnectorServiceProvider,
+  );
+  return service.getDeviceStateMap(deviceId);
+});
 
-final managedGeofencesProvider = StreamProvider<List<Geofence>>((Ref ref) {
-  return ref.watch(deviceGeofencesProvider.stream);
+final managedGeofencesProvider = Provider<AsyncValue<List<Geofence>>>((
+  Ref ref,
+) {
+  return ref.watch(deviceGeofencesProvider);
 });
 
 final flespiExecuteCommandProvider = Provider<FlespiExecuteCommand>((Ref ref) {
