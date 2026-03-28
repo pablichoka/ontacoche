@@ -20,6 +20,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final FocusNode _parkingFocusNode;
 
   bool _isSaving = false;
+  bool _isNameInitialized = false;
 
   @override
   void initState() {
@@ -78,6 +79,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         );
         ref.invalidate(deviceDetailsProvider);
+        _isNameInitialized = false;
       }
     } catch (e) {
       if (mounted) {
@@ -124,8 +126,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             Expanded(
               child: deviceState.when(
                 data: (device) {
-                  if (_nameController.text.isEmpty && !_isSaving) {
+                  if (!_isNameInitialized && !_isSaving) {
                     _nameController.text = device['name'] ?? '';
+                    _isNameInitialized = true;
                   }
 
                   return SingleChildScrollView(

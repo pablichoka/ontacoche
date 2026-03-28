@@ -35,7 +35,7 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ ok: false, error: 'name is required' });
   }
 
-  const url = `https://flespi.io/gw/devices/${encodeURIComponent(selector)}`;
+  const url = `https://flespi.io/gw/devices/${selector}`;
 
   try {
     const response = await fetch(url, {

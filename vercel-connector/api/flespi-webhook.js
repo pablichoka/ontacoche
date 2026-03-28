@@ -569,11 +569,20 @@ async function persistEvent({ firestore, config, event, classification }) {
       const newActive = Boolean(writeSnapshot.communication_active);
         
       const tsDiffMs = writeSnapshot.source_ts_ms - (existingData.source_ts_ms || 0);
-      const DEDUPE_THRESHOLD_MS = 2 * 60 * 1000;
 
       const isAlert = effectiveClassification.vibrationAlarm || effectiveClassification.geofenceAlarm || effectiveClassification.geofenceConfigChange;
-      
-      if (!isAlert && identicalPos && existingActive === newActive && tsDiffMs >= 0 && tsDiffMs < DEDUPE_THRESHOLD_MS) {
+
+      // When tracker is active, limit state writes to 1 per minute. Otherwise use 2 minutes
+      const ACTIVE_DEDUPE_MS = 60 * 1000; // 1 minute
+      const INACTIVE_DEDUPE_MS = 2 * 60 * 1000; // 2 minutes
+      const dedupeThresholdMs = (existingActive && newActive) ? ACTIVE_DEDUPE_MS : INACTIVE_DEDUPE_MS;
+
+      if (!isAlert && identicalPos && existingActive === newActive && tsDiffMs >= 0 && tsDiffMs < dedupeThresholdMs) {
+        skipStateWrite = true;
+      }
+
+      // Additionally, enforce 1/min throttle while active regardless of identical position
+      if (!isAlert && existingActive && newActive && tsDiffMs >= 0 && tsDiffMs < ACTIVE_DEDUPE_MS) {
         skipStateWrite = true;
       }
     } catch (e) {
@@ -583,8 +592,37 @@ async function persistEvent({ firestore, config, event, classification }) {
 
   const writeOps = [];
   if (!skipStateWrite) {
+    // Ensure no null fields in the document we persist
+    writeSnapshot.device = writeSnapshot.device || {};
+    writeSnapshot.device.id = writeSnapshot.device.id != null ? String(writeSnapshot.device.id) : (event.deviceId ? String(event.deviceId) : '');
+    writeSnapshot.device.name = writeSnapshot.device.name != null ? String(writeSnapshot.device.name) : '';
+
+    const pos = writeSnapshot.position || {};
+    writeSnapshot.position = {
+      latitude: pos.latitude != null ? Number(pos.latitude) : 0,
+      longitude: pos.longitude != null ? Number(pos.longitude) : 0,
+      altitude: pos.altitude != null ? Number(pos.altitude) : 0,
+      direction: pos.direction != null ? Number(pos.direction) : 0,
+      satellites: pos.satellites != null ? Number(pos.satellites) : 0,
+      speed: pos.speed != null ? Number(pos.speed) : 0,
+    };
+
+    writeSnapshot.battery = writeSnapshot.battery || {};
+    writeSnapshot.battery.level = writeSnapshot.battery.level != null ? Number(writeSnapshot.battery.level) : 0;
+    writeSnapshot.battery.voltage = writeSnapshot.battery.voltage != null ? Number(writeSnapshot.battery.voltage) : 0;
+
+    writeSnapshot.source_ts = writeSnapshot.source_ts || new Date().toISOString();
+    writeSnapshot.source_ts_ms = Number(writeSnapshot.source_ts_ms) || Date.parse(writeSnapshot.source_ts) || Date.now();
+    writeSnapshot.updated_at = writeSnapshot.updated_at || new Date().toISOString();
+
     writeOps.push(stateRef.set(writeSnapshot, { merge: true }));
-    if (config.storeStateHistory) {
+
+    // Only persist in the state history if the event appears to have originated from flespi
+    const serverTs = firstDefined(raw, ['server.timestamp', 'server_ts', 'timestamp']);
+    const rawTopic = firstDefined(raw, ['topic', 'event.topic']) || '';
+    const isFromFlespi = serverTs != null || (typeof rawTopic === 'string' && rawTopic.toLowerCase().includes('flespi'));
+
+    if (config.storeStateHistory && isFromFlespi) {
       writeOps.push(firestore.collection(config.stateHistoryCollection).add(writeSnapshot));
     }
   }

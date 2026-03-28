@@ -40,7 +40,7 @@ class VercelConnectorService {
     return headers;
   }
 
-  Future<DevicePosition?> getCurrentDeviceState(String deviceId) async {
+  Future<Map<String, dynamic>?> getDeviceStateMap(String deviceId) async {
     final Uri uri = Uri.parse('$baseUrl/api/device-state?device_id=$deviceId');
     final Map<String, String> headers = _readHeaders();
 
@@ -56,8 +56,15 @@ class VercelConnectorService {
       );
     }
 
-    final Map<String, dynamic> payload =
-        jsonDecode(response.body) as Map<String, dynamic>;
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<DevicePosition?> getCurrentDeviceState(String deviceId) async {
+    final Map<String, dynamic>? payload = await getDeviceStateMap(deviceId);
+    if (payload == null) {
+      return null;
+    }
+
     final Map<String, dynamic>? state = payload['state'] is Map
         ? Map<String, dynamic>.from(payload['state'] as Map)
         : null;
@@ -175,15 +182,31 @@ class VercelConnectorService {
   }
 
   Future<Map<String, dynamic>> getSettingsDeviceInfo(String deviceId) async {
-    final DevicePosition? position = await getCurrentDeviceState(deviceId);
-    final DateTime? ts = position?.timestamp;
+    final Map<String, dynamic>? payload = await getDeviceStateMap(deviceId);
+    final Map<String, dynamic>? state = payload?['state'] is Map
+        ? Map<String, dynamic>.from(payload!['state'] as Map)
+        : null;
+
+    String name = 'Tracker $deviceId';
+    DateTime? ts;
+
+    if (state != null) {
+      final Map<String, dynamic>? deviceData = (state['device'] is Map)
+          ? Map<String, dynamic>.from(state['device'] as Map)
+          : null;
+      if (deviceData != null && deviceData['name'] != null) {
+        name = deviceData['name'].toString();
+      }
+      ts = Parsers.fromUnknown(state['source_ts']);
+    }
+
     final bool connected =
         ts != null &&
         Parsers.now().difference(ts) <= const Duration(minutes: 5);
 
     return <String, dynamic>{
       'id': deviceId,
-      'name': 'Tracker $deviceId',
+      'name': name,
       'protocol_name': 'flespi-stream',
       'device_type_name': 'tracker',
       'connected': connected,

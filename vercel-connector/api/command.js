@@ -46,7 +46,7 @@ module.exports = async function handler(req, res) {
   }
 
   const endpoint = queue ? 'commands-queue' : 'commands';
-  const url = `https://flespi.io/gw/devices/${encodeURIComponent(selector)}/${endpoint}`;
+  const url = `https://flespi.io/gw/devices/${selector}/${endpoint}`;
 
   const flespiBody = [{
     name,
