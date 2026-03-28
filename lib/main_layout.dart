@@ -38,6 +38,7 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
+      resizeToAvoidBottomInset: false,
       body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: Consumer(
         builder: (context, ref, _) {

@@ -46,7 +46,7 @@ class AlertsScreen extends ConsumerWidget {
           final List<_AlertGroup> groups = _groupAlertsByDay(alerts);
 
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 200),
             itemCount: groups.length,
             itemBuilder: (BuildContext context, int index) {
               final _AlertGroup group = groups[index];

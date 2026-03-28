@@ -13,8 +13,9 @@ class HistoryScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<List<TelemetryRecord>> historyState =
-        ref.watch(telemetryHistoryProvider);
+    final AsyncValue<List<TelemetryRecord>> historyState = ref.watch(
+      telemetryHistoryProvider,
+    );
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -30,9 +31,14 @@ class HistoryScreen extends ConsumerWidget {
             return const _EmptyHistoryState();
           }
 
-          final List<TelemetryRecord> orderedRecords = records.reversed.toList(growable: false);
+          final List<TelemetryRecord> orderedRecords = records.reversed.toList(
+            growable: false,
+          );
           final List<LatLng> points = orderedRecords
-              .map((TelemetryRecord record) => LatLng(record.latitude, record.longitude))
+              .map(
+                (TelemetryRecord record) =>
+                    LatLng(record.latitude, record.longitude),
+              )
               .toList(growable: false);
           final TelemetryRecord latest = records.first;
           final TelemetryRecord earliest = orderedRecords.first;
@@ -46,14 +52,18 @@ class HistoryScreen extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(24),
                     child: FlutterMap(
                       options: MapOptions(
-                        initialCenter: LatLng(latest.latitude, latest.longitude),
+                        initialCenter: LatLng(
+                          latest.latitude,
+                          latest.longitude,
+                        ),
                         initialZoom: 14,
                         minZoom: 3,
                         maxZoom: 19,
                       ),
                       children: <Widget>[
                         TileLayer(
-                          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                           userAgentPackageName: 'com.ontacoche.app',
                         ),
                         PolylineLayer(
@@ -93,7 +103,7 @@ class HistoryScreen extends ConsumerWidget {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 200),
                 child: _HistorySummaryCard(
                   count: points.length,
                   latest: latest,
@@ -162,9 +172,9 @@ class _HistorySummaryCard extends StatelessWidget {
         children: <Widget>[
           Text(
             'Trayecto guardado',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 16),
           _SummaryRow(
@@ -222,9 +232,9 @@ class _SummaryRow extends StatelessWidget {
               Text(label, style: Theme.of(context).textTheme.labelMedium),
               Text(
                 value,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -257,10 +267,7 @@ class _RouteMarker extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           child: Icon(icon, color: Colors.white, size: 18),
         ),
       ),
@@ -283,9 +290,9 @@ class _EmptyHistoryState extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               'Todavía no hay trayecto suficiente',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
             Text(

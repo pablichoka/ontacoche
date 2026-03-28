@@ -133,10 +133,9 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
     if (realtimePosition == null) {
       return;
     }
-
     final String signature =
         '${data['source_ts_ms'] ?? data['source_ts'] ?? data['updated_at'] ?? ''}'
-        '|${data['latitude'] ?? ''}|${data['longitude'] ?? ''}|${data['speed'] ?? ''}';
+        '|${realtimePosition.latitude}|${realtimePosition.longitude}|${realtimePosition.speed ?? ''}';
     if (_lastRealtimeSignature == signature) {
       return;
     }
@@ -212,9 +211,17 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
       ),
       timestamp: timestamp,
       batteryLevel: DevicePosition.readDouble(
-        stateData['battery_level'] ?? stateData['battery.level'],
+        _asBatteryLevel(stateData),
       ),
     );
+  }
+
+  static dynamic _asBatteryLevel(Map<String, dynamic> stateData) {
+    final dynamic battery = stateData['battery'];
+    if (battery is Map) {
+      return battery['level'] ?? battery['level'];
+    }
+    return stateData['battery_level'] ?? stateData['battery.level'];
   }
 
   DateTime? _fromMilliseconds(Object? value) {

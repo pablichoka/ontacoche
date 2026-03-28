@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/api_provider.dart';
-import '../utils/scroll_utils.dart';
+import '../providers/settings_provider.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -13,67 +13,45 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final TextEditingController _nameController = TextEditingController();
-  final FocusNode _nameFocus = FocusNode();
-  final GlobalKey _nameFieldKey = GlobalKey();
-  final ScrollController _scrollController = ScrollController();
+  final TextEditingController _parkingController = TextEditingController();
+
+  late final FocusNode _nameFocusNode;
+  late final FocusNode _parkingFocusNode;
 
   bool _isSaving = false;
-  double _lastKeyboardHeight = 0.0;
 
   @override
   void initState() {
     super.initState();
-    _nameFocus.addListener(_handleFocusChange);
+    _nameFocusNode = FocusNode()
+      ..addListener(() => _onFocusChange(_nameFocusNode));
+    _parkingFocusNode = FocusNode()
+      ..addListener(() => _onFocusChange(_parkingFocusNode));
   }
 
-  void _handleFocusChange() {
-    if (_nameFocus.hasFocus) {
-      Future.delayed(const Duration(milliseconds: 450), _scrollToTextField);
-    }
-  }
-
-  void _scrollToTextField() {
+  void _onFocusChange(FocusNode node) async {
+    if (!node.hasFocus) return;
+    await Future.delayed(const Duration(milliseconds: 400));
     if (!mounted) return;
-    final box = _nameFieldKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null) return;
-
-    final media = MediaQuery.of(context);
-    final keyboardHeight = media.viewInsets.bottom;
-    if (keyboardHeight <= 0) return;
-
-    final fieldGlobalY = box.localToGlobal(Offset.zero).dy;
-    final fieldHeight = box.size.height;
-
-    final desiredOffset = computeKeyboardScrollOffset(
-      fieldGlobalY: fieldGlobalY,
-      fieldHeight: fieldHeight,
-      screenHeight: media.size.height,
-      keyboardHeight: keyboardHeight,
-      currentScrollOffset: _scrollController.offset,
-      topInset: media.padding.top + kToolbarHeight,
-      bottomInset: media.padding.bottom,
-      extraPadding: 24,
-    );
-
-    if (desiredOffset == null) return;
-
-    final clamped = desiredOffset.clamp(
-      0.0,
-      _scrollController.position.maxScrollExtent,
-    );
-
-    _scrollController.animateTo(
-      clamped,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = node.context;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 250),
+          alignment: 0.1,
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _nameFocus.dispose();
-    _scrollController.dispose();
+    _parkingController.dispose();
+    _nameFocusNode.dispose();
+    _parkingFocusNode.dispose();
     super.dispose();
   }
 
@@ -89,7 +67,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       await service.updateDevice(selector, {'name': newName});
 
-      // Hide the keyboard and remove focus (keeps cursor from staying active)
       if (mounted) FocusScope.of(context).unfocus();
 
       if (mounted) {
@@ -120,121 +97,218 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final deviceState = ref.watch(deviceDetailsProvider);
+    final settingsAsync = ref.watch(settingsRepositoryProvider);
+    final double kbHeight = MediaQuery.of(context).viewInsets.bottom;
 
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        title: const Text(
-          'Ajustes',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-      ),
-      body: deviceState.when(
-        data: (device) {
-          if (_nameController.text.isEmpty && !_isSaving) {
-            _nameController.text = device['name'] ?? '';
-          }
+    return ColoredBox(
+      color: const Color(0xFFF8FAFC),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: const Text(
+                'Ajustes',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+              ),
+            ),
+            Expanded(
+              child: deviceState.when(
+                data: (device) {
+                  if (_nameController.text.isEmpty && !_isSaving) {
+                    _nameController.text = device['name'] ?? '';
+                  }
 
-          // Detectar cuando se cierra el teclado y limpiar el foco
-          final currentKeyboardHeight = MediaQuery.of(
-            context,
-          ).viewInsets.bottom;
-          if (_lastKeyboardHeight > 0 &&
-              currentKeyboardHeight == 0 &&
-              _nameFocus.hasFocus) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              FocusScope.of(context).unfocus();
-            });
-          }
-          _lastKeyboardHeight = currentKeyboardHeight;
-
-          final media = MediaQuery.of(context);
-          final viewInsets = media.viewInsets;
-          final keyboardOpen = viewInsets.bottom > 0;
-
-          if (!keyboardOpen && _scrollController.hasClients) {
-            // No permitir scroll cuando el teclado está cerrado.
-            _scrollController.jumpTo(0);
-          }
-
-          return Padding(
-            padding: EdgeInsets.only(bottom: viewInsets.bottom),
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              physics: keyboardOpen
-                  ? const ClampingScrollPhysics()
-                  : const NeverScrollableScrollPhysics(),
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildSectionTitle('Información del Dispositivo'),
-                  _buildDeviceCard(device),
-                  const SizedBox(height: 24),
-                  _buildSectionTitle('Configuración'),
-                  _buildSettingItem(
-                    title: 'Nombre del Tracker',
-                    subtitle: 'Personaliza cómo aparece el dispositivo',
-                    child: Row(
+                  return SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, kbHeight + 200),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Expanded(
-                          child: TextField(
-                            key: _nameFieldKey,
-                            focusNode: _nameFocus,
-                            controller: _nameController,
-                            decoration: InputDecoration(
-                              hintText: 'Ej: Mi Coche',
-                              filled: true,
-                              fillColor: Colors.grey.shade100,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        _isSaving
-                            ? const CircularProgressIndicator()
-                            : IconButton.filled(
-                                onPressed: _saveDeviceName,
-                                icon: const Icon(Icons.check_rounded),
-                                style: IconButton.styleFrom(
-                                  backgroundColor: const Color(0xFF1D4ED8),
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                        _buildSectionTitle('Información del Dispositivo'),
+                        _buildDeviceCard(device),
+                        const SizedBox(height: 24),
+                        _buildSectionTitle('Configuración'),
+                        _buildSettingItem(
+                          title: 'Nombre del Tracker',
+                          subtitle: 'Personaliza cómo aparece el dispositivo',
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _nameController,
+                                  focusNode: _nameFocusNode,
+                                  decoration: InputDecoration(
+                                    hintText: 'Ej: Mi Coche',
+                                    filled: true,
+                                    fillColor: Colors.grey.shade100,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 12,
+                                    ),
                                   ),
                                 ),
                               ),
+                              const SizedBox(width: 8),
+                              _isSaving
+                                  ? const CircularProgressIndicator()
+                                  : IconButton.filled(
+                                      onPressed: _saveDeviceName,
+                                      icon: const Icon(Icons.check_rounded),
+                                      style: IconButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFF1D4ED8,
+                                        ),
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildSectionTitle('Preferencias de Geovallas'),
+                        settingsAsync.when(
+                          data: (settings) {
+                            if (_parkingController.text.isEmpty && !_isSaving) {
+                              _parkingController.text = settings
+                                  .parkingDiameterMeters
+                                  .toStringAsFixed(0);
+                            }
+                            return _buildSettingItem(
+                              title: 'Diámetro parking (m)',
+                              subtitle:
+                                  'Diámetro por defecto para geovallas tipo parking',
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _parkingController,
+                                      focusNode: _parkingFocusNode,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                            decimal: false,
+                                          ),
+                                      decoration: InputDecoration(
+                                        hintText: '100',
+                                        filled: true,
+                                        fillColor: Colors.grey.shade100,
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          borderSide: BorderSide.none,
+                                        ),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 12,
+                                            ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  FilledButton.icon(
+                                    onPressed: () async {
+                                      final String raw = _parkingController.text
+                                          .trim();
+                                      final double? meters = double.tryParse(
+                                        raw,
+                                      );
+                                      if (meters == null || meters <= 0) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Introduce un número válido.',
+                                            ),
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      try {
+                                        await settings.setParkingDiameterMeters(
+                                          meters,
+                                        );
+                                        ref.invalidate(
+                                          settingsRepositoryProvider,
+                                        );
+                                        if (mounted) {
+                                          FocusScope.of(context).unfocus();
+                                        }
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Preferencia guardada.',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text('Error: $e'),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                                    icon: const Icon(Icons.save_rounded),
+                                    label: const Text('Guardar'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                          loading: () => _buildSettingItem(
+                            title: 'Diámetro parking (m)',
+                            subtitle: 'Cargando…',
+                            child: const SizedBox(
+                              height: 48,
+                              child: Center(child: CircularProgressIndicator()),
+                            ),
+                          ),
+                          error: (e, s) => _buildSettingItem(
+                            title: 'Diámetro parking (m)',
+                            subtitle: 'Error cargando preferencias',
+                            child: Text('Error: $e'),
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                        const Center(
+                          child: Text(
+                            'Ontacoche v1.2.0',
+                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                          ),
+                        ),
+                        const SizedBox(height: 32),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 32),
-                  const Center(
-                    child: Text(
-                      'Ontacoche v1.2.0',
-                      style: TextStyle(color: Colors.grey, fontSize: 12),
-                    ),
-                  ),
-                  SizedBox(height: viewInsets.bottom + 100),
-                ],
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (err, stack) => Center(child: Text('Error: $err')),
               ),
             ),
-          );
-        },
-
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, stack) => Center(child: Text('Error: $err')),
+          ],
+        ),
       ),
     );
   }

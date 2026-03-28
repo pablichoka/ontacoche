@@ -5,6 +5,8 @@ const {
   getActiveTokens,
 } = require('../src/tokenRepository');
 
+const { DateTime } = require('luxon');
+
 const VIBRATION_DEDUPE_WINDOW_SECONDS = 45;
 const GEOFENCE_DEDUPE_WINDOW_SECONDS = 30;
 
@@ -112,6 +114,18 @@ function toIsoFromMs(ms) {
   }
 
   return new Date(ms).toISOString();
+}
+
+function formatIsoInZone(ms, zone) {
+  if (ms == null) {
+    return DateTime.now().setZone(zone).toISO();
+  }
+
+  try {
+    return DateTime.fromMillis(ms, { zone }).toISO();
+  } catch (e) {
+    return new Date(ms).toISOString();
+  }
 }
 
 function makeStableId(input) {
@@ -413,8 +427,8 @@ function classifyEvent(event, config) {
   let severity = 'info';
 
   if (vibrationAlarm) {
-    title = 'Alerta de vibracion';
-    body = 'Se detecto vibracion en el tracker';
+    title = 'Alerta de vibración';
+    body = 'Se detecto vibración en el tracker';
     severity = 'high';
   } else if (geofenceAlarm) {
     title = 'Alerta de geocerca';
@@ -453,35 +467,40 @@ function classifyEvent(event, config) {
   };
 }
 
-function buildStateSnapshot(event, classification) {
+function buildStateSnapshot(event, classification, config) {
   const raw = event.raw || {};
   const sourceTsMs =
     parseTimestampToMs(firstDefined(raw, ['server.timestamp', 'timestamp', 'end', 'begin'])) ||
     parseTimestampToMs(event.ts) ||
     Date.now();
-
-  return {
-    device_id: event.deviceId,
-    user_id: event.userId || null,
-    report_code: event.reportCode || null,
-    event_type: event.eventType || null,
+  const batteryLevel = firstDefined(raw, ['battery.level', 'battery_level']);
+  const batteryVoltage = firstDefined(raw, ['battery.voltage', 'battery_voltage', 'battery.v']);
+  const position = {
+    altitude: firstDefined(raw, ['position.altitude', 'altitude']) || 0,
+    direction: firstDefined(raw, ['position.direction', 'direction']) || 0,
     latitude: firstDefined(raw, ['position.latitude', 'latitude']),
     longitude: firstDefined(raw, ['position.longitude', 'longitude']),
-    speed: firstDefined(raw, ['position.speed', 'speed']),
-    battery_level: firstDefined(raw, ['battery.level', 'battery_level']),
-    alarm: firstDefined(raw, ['alarm']),
-    vibration_alarm: classification.vibrationAlarm,
-    geofence_alarm: classification.geofenceAlarm,
-    geofence_name: classification.geofenceName,
-    geofence_status: firstDefined(raw, ['plugin.geofence.status', 'geofence.status']),
-    geofence_enter: classification.geofenceEnter,
-    geofence_exit: classification.geofenceExit,
-    communication_active: classification.communicationActive,
-    payload: raw,
-    source_ts: toIsoFromMs(sourceTsMs),
+    satellites: firstDefined(raw, ['position.satellites', 'satellites']) || 0,
+    speed: firstDefined(raw, ['position.speed', 'speed']) || 0,
+  };
+
+  const deviceName = firstDefined(raw, ['device.name', 'deviceName', 'device.name']) || null;
+
+  const snapshot = {
+    battery: {
+      level: batteryLevel == null ? null : Number(batteryLevel),
+      voltage: batteryVoltage == null ? null : Number(batteryVoltage),
+    },
+    communication_active: Boolean(classification.communicationActive),
+    device_id: event.deviceId,
+    device: { name: deviceName || null },
+    position,
     source_ts_ms: sourceTsMs,
+    source_ts: formatIsoInZone(sourceTsMs, (config && config.timezone) || 'UTC'),
     updated_at: new Date().toISOString(),
   };
+
+  return snapshot;
 }
 
 async function persistEvent({ firestore, config, event, classification }) {
@@ -501,7 +520,7 @@ async function persistEvent({ firestore, config, event, classification }) {
 
   let effectiveClassification = classification;
 
-  const snapshot = buildStateSnapshot(event, effectiveClassification);
+  const snapshot = buildStateSnapshot(event, effectiveClassification, config);
 
   if (classification.communicationActive || currentGeofenceStatus != null) {
     await stateRef.set(snapshot, { merge: true });
@@ -551,20 +570,48 @@ async function persistEvent({ firestore, config, event, classification }) {
     const alertRef = firestore.collection(config.alertsCollection).doc(dedupeKey);
     const existing = await alertRef.get();
 
-    await alertRef.set({
-      ...snapshot,
-      dedupe_key: dedupeKey,
-      event_id: event.eventId || null,
-      event_kind: alertKind,
-      message: effectiveClassification.body,
-      severity: effectiveClassification.severity,
-      checked: existing.exists ? Boolean(existing.data()?.checked) : false,
-      checked_at: existing.exists ? (existing.data()?.checked_at || null) : null,
-      created_at: existing.exists
-        ? (existing.data()?.created_at || new Date().toISOString())
-        : new Date().toISOString(),
-      ...(existing.exists ? {} : { last_seen_at: new Date().toISOString() }),
-    }, { merge: true });
+    // Build a compact alert document to store only essential fields
+    const alertDoc = effectiveClassification.vibrationAlarm
+      ? {
+        source_ts: snapshot.source_ts,
+        source_ts_ms: snapshot.source_ts_ms,
+        device_id: snapshot.device_id,
+        vibration_alarm: true,
+        message: effectiveClassification.body || 'Se detecto vibración en el tracker',
+        dedupe_key: dedupeKey,
+        event_id: event.eventId || null,
+        event_kind: alertKind,
+        severity: effectiveClassification.severity,
+        checked: existing.exists ? Boolean(existing.data()?.checked) : false,
+        checked_at: existing.exists ? (existing.data()?.checked_at || null) : null,
+        created_at: existing.exists
+          ? (existing.data()?.created_at || new Date().toISOString())
+          : new Date().toISOString(),
+        last_seen_at: new Date().toISOString(),
+      }
+      : {
+        // geofence related alert: minimal fields
+        source_ts: snapshot.source_ts,
+        source_ts_ms: snapshot.source_ts_ms,
+        device_id: snapshot.device_id,
+        geofence_alarm: Boolean(effectiveClassification.geofenceAlarm),
+        geofence_enter: Boolean(effectiveClassification.geofenceEnter),
+        geofence_exit: Boolean(effectiveClassification.geofenceExit),
+        geofence_name: effectiveClassification.geofenceName || null,
+        message: effectiveClassification.body || null,
+        dedupe_key: dedupeKey,
+        event_id: event.eventId || null,
+        event_kind: alertKind,
+        severity: effectiveClassification.severity,
+        checked: existing.exists ? Boolean(existing.data()?.checked) : false,
+        checked_at: existing.exists ? (existing.data()?.checked_at || null) : null,
+        created_at: existing.exists
+          ? (existing.data()?.created_at || new Date().toISOString())
+          : new Date().toISOString(),
+        last_seen_at: new Date().toISOString(),
+      };
+
+    await alertRef.set(alertDoc, { merge: true });
 
     return {
       alertCreated: !existing.exists,

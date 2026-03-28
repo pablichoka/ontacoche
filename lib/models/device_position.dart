@@ -39,8 +39,12 @@ class DevicePosition {
       speed: _readDouble(
         nestedPosition?['speed'] ?? payload['speed'] ?? payload['position.speed'],
       ),
-      timestamp: _readDateTime(payload['timestamp'] ?? payload['server.timestamp']),
-      batteryLevel: _readDouble(payload['battery.level']),
+      timestamp: _readDateTime(
+        payload['source_ts'] ?? payload['timestamp'] ?? payload['server.timestamp'] ?? payload['source_ts_ms'],
+      ),
+      batteryLevel: _readDouble(
+        _asMap(payload['battery'])?['level'] ?? payload['battery.level'] ?? payload['battery_level'],
+      ),
     );
   }
 

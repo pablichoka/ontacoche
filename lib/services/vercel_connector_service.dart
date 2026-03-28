@@ -66,21 +66,29 @@ class VercelConnectorService {
       return null;
     }
 
-    final double? latitude = _toDouble(state['latitude']);
-    final double? longitude = _toDouble(state['longitude']);
+    // support new compact state shape where position is nested
+    final Map<String, dynamic>? positionMap =
+        (state['position'] is Map) ? Map<String, dynamic>.from(state['position'] as Map) : null;
+
+    final double? latitude = _toDouble(positionMap?['latitude'] ?? state['latitude']);
+    final double? longitude = _toDouble(positionMap?['longitude'] ?? state['longitude']);
     if (latitude == null || longitude == null) {
       return null;
     }
 
+    final double? altitude = _toDouble(positionMap?['altitude'] ?? state['altitude']);
+    final double? speed = _toDouble(positionMap?['speed'] ?? state['speed']);
+    final double? batteryLevel = _toDouble(
+      (state['battery'] is Map) ? Map<String, dynamic>.from(state['battery'] as Map)['level'] ?? state['battery_level'] : state['battery_level'],
+    );
+
     return DevicePosition(
       latitude: latitude,
       longitude: longitude,
-      altitude: _toDouble(state['altitude']),
-      speed: _toDouble(state['speed']),
-      batteryLevel: _toDouble(state['battery_level']),
-      timestamp:
-          Parsers.fromUnknown(state['source_ts']) ??
-          Parsers.fromUnknown(state['updated_at']),
+      altitude: altitude,
+      speed: speed,
+      batteryLevel: batteryLevel,
+      timestamp: Parsers.fromUnknown(state['source_ts']) ?? Parsers.fromUnknown(state['updated_at']),
     );
   }
 

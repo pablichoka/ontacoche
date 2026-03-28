@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +19,9 @@ class GeofenceManagerScreen extends ConsumerStatefulWidget {
 
 class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
   final MapController _mapController = MapController();
+  double _currentZoom = 15.0;
+  StreamSubscription? _mapEventSub;
+  bool _didRecentreEditor = false;
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _radiusController = TextEditingController(
     text: '0.20',
@@ -36,14 +41,31 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
   bool _isMovingVertex = false;
   bool _isSaving = false;
   int? _editingGeofenceId;
+  bool _showEditor = false;
 
   @override
   void dispose() {
-    _mapController.dispose();
+    _mapEventSub?.cancel();
     _nameController.dispose();
     _radiusController.dispose();
     _priorityController.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // keep track of zoom via map events to preserve user zoom
+    _mapEventSub = _mapController.mapEventStream.listen((dynamic ev) {
+      try {
+        final dynamic z = (ev as dynamic).zoom;
+        if (z is double) {
+          _currentZoom = z;
+        }
+      } catch (_) {
+        // ignore events that don't have zoom
+      }
+    });
   }
 
   void _startCreateMode() {
@@ -57,11 +79,31 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
       _draftPath = <LatLng>[];
       _isDrawingPolygon = false;
       _editorType = GeofenceType.circle;
+      _showEditor = true;
+      _didRecentreEditor = false;
+    });
+  }
+
+  void _exitEditor() {
+    setState(() {
+      _editingGeofenceId = null;
+      _nameController.text = '';
+      _radiusController.text = '0.20';
+      _priorityController.text = '10';
+      _draftCenter = null;
+      _draftPath = <LatLng>[];
+      _isDrawingPolygon = false;
+      _editorType = GeofenceType.circle;
+      _selectedVertexIndex = null;
+      _isMovingVertex = false;
+      _showEditor = false;
+      _didRecentreEditor = false;
     });
   }
 
   void _loadForEdit(Geofence geofence) {
     setState(() {
+      _showEditor = true;
       _editingGeofenceId = geofence.id;
       _nameController.text = geofence.name;
       _priorityController.text = geofence.priority.toString();
@@ -76,7 +118,14 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
         _draftCenter = LatLng(geofence.latitude!, geofence.longitude!);
         _draftPath = <LatLng>[];
         _isDrawingPolygon = false;
-        _mapController.move(_draftCenter!, 16);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          try {
+            _mapController.move(_draftCenter!, _currentZoom);
+            _didRecentreEditor = true;
+          } catch (_) {
+            // ignore if controller not ready
+          }
+        });
       } else if (geofence.type == GeofenceType.polygon &&
           geofence.points.isNotEmpty) {
         _editorType = GeofenceType.polygon;
@@ -85,7 +134,14 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
             .toList(growable: true);
         _draftCenter = null;
         _isDrawingPolygon = false;
-        _mapController.move(_draftPath.first, 16);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          try {
+            _mapController.move(_draftPath.first, _currentZoom);
+            _didRecentreEditor = true;
+          } catch (_) {
+            // ignore if controller not ready
+          }
+        });
       } else {
         final messenger = ScaffoldMessenger.of(context);
         messenger.hideCurrentSnackBar();
@@ -165,7 +221,12 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
         }
       } else {
         final List<Map<String, double>> path = _draftPath
-            .map((LatLng p) => <String, double>{'lat': p.latitude, 'lon': p.longitude})
+            .map(
+              (LatLng p) => <String, double>{
+                'lat': p.latitude,
+                'lon': p.longitude,
+              },
+            )
             .toList(growable: false);
         if (_editingGeofenceId == null) {
           await service.createPolygonGeofence(
@@ -196,7 +257,7 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
           ),
         );
       }
-      _startCreateMode();
+      _exitEditor();
     } catch (error) {
       _showError('No se pudo guardar: $error');
     } finally {
@@ -250,7 +311,7 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
         );
       }
       if (_editingGeofenceId == geofence.id) {
-        _startCreateMode();
+        _exitEditor();
       }
     } catch (error) {
       _showError('No se pudo eliminar: $error');
@@ -264,10 +325,7 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.fixed,
-        content: Text(message),
-      ),
+      SnackBar(behavior: SnackBarBehavior.fixed, content: Text(message)),
     );
   }
 
@@ -280,6 +338,22 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
     final LatLng initialCenter = initialPosition != null
         ? LatLng(initialPosition.latitude, initialPosition.longitude)
         : const LatLng(38.052972, -1.216263);
+
+    // if editor is shown, ensure map recenters to latest vehicle position
+    // but only do this once when the editor is opened to avoid moving on every rebuild
+    if (_showEditor && initialPosition != null && !_didRecentreEditor) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          _mapController.move(
+            LatLng(initialPosition.latitude, initialPosition.longitude),
+            _currentZoom,
+          );
+          _didRecentreEditor = true;
+        } catch (_) {
+          // ignore if controller not ready
+        }
+      });
+    }
 
     final List<Geofence> geofences =
         geofencesState.valueOrNull ?? const <Geofence>[];
@@ -320,206 +394,277 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Gestion de geovallas')),
-      backgroundColor: const Color(0xFFF8FAFC),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _startCreateMode,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Nueva geovalla'),
-      ),
-      body: SingleChildScrollView(
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: EdgeInsets.fromLTRB(0, 0, 0, media.viewInsets.bottom + 100),
+    Widget content = ColoredBox(
+      color: const Color(0xFFF8FAFC),
+      child: SafeArea(
+        bottom: false,
         child: Column(
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: _buildEditorCard(),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                height: keyboardOpen ? 180 : 260,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: FlutterMap(
-                    mapController: _mapController,
-                    options: MapOptions(
-                      initialCenter: initialCenter,
-                      initialZoom: 15,
-                      onTap: (TapPosition _, LatLng point) {
-                        if (_isPickingCenter) {
-                          setState(() {
-                            _draftCenter = point;
-                            _isPickingCenter = false;
-                          });
-                          return;
-                        }
-
-                        if (_editorType == GeofenceType.polygon &&
-                            _isDrawingPolygon) {
-                          setState(() {
-                            _draftPath.add(point);
-                          });
-                          return;
-                        }
-                        // move selected vertex to tapped location
-                        if (_editorType == GeofenceType.polygon &&
-                            _isMovingVertex &&
-                            _selectedVertexIndex != null &&
-                            _selectedVertexIndex! >= 0 &&
-                            _selectedVertexIndex! < _draftPath.length) {
-                          setState(() {
-                            _draftPath[_selectedVertexIndex!] = point;
-                            _isMovingVertex = false;
-                            _selectedVertexIndex = null;
-                          });
-                          return;
-                        }
-                      },
-                    ),
-                    children: <Widget>[
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.ontacoche.app',
-                      ),
-                      CircleLayer(circles: circles),
-                      // existing polygon geofences
-                      if (geofences.isNotEmpty)
-                        PolygonLayer(
-                          polygons: geofences
-                              .where((g) => g.type == GeofenceType.polygon)
-                              .map((g) => Polygon(
-                                    points: g.points
-                                        .map((p) =>
-                                            LatLng(p.latitude, p.longitude))
-                                        .toList(growable: false),
-                                    color: Colors.blue.withValues(alpha: 0.12),
-                                    borderColor: Colors.blue,
-                                    borderStrokeWidth: 2,
-                                  ))
-                              .toList(growable: false),
-                        ),
-                      // draft polygon preview
-                      if (_draftPath.isNotEmpty)
-                        PolygonLayer(
-                          polygons: <Polygon>[
-                            Polygon(
-                              points: _draftPath,
-                              color: Colors.orange.withValues(alpha: 0.16),
-                              borderColor: Colors.orange,
-                              borderStrokeWidth: 2,
-                            ),
-                          ],
-                        ),
-                      if (_draftCenter != null)
-                        MarkerLayer(
-                          markers: <Marker>[
-                            Marker(
-                              point: _draftCenter!,
-                              width: 36,
-                              height: 36,
-                              child: const Icon(
-                                Icons.place_rounded,
-                                size: 34,
-                                color: Colors.orange,
-                              ),
-                            ),
-                          ],
-                        ),
-                      if (_draftPath.isNotEmpty)
-                        MarkerLayer(
-                          markers: _draftPath
-                              .asMap()
-                              .entries
-                              .map(
-                                (MapEntry<int, LatLng> e) {
-                                  final int idx = e.key;
-                                  final LatLng p = e.value;
-                                  final bool selected = _selectedVertexIndex == idx;
-                                  return Marker(
-                                    point: p,
-                                    width: 28,
-                                    height: 28,
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        setState(() {
-                                          _selectedVertexIndex = idx;
-                                        });
-                                      },
-                                      onLongPress: () {
-                                        setState(() {
-                                          _draftPath.removeAt(idx);
-                                          if (_selectedVertexIndex != null) {
-                                            _selectedVertexIndex = null;
-                                          }
-                                        });
-                                      },
-                                      child: CircleAvatar(
-                                        radius: selected ? 14 : 12,
-                                        backgroundColor: selected
-                                            ? Colors.orange
-                                            : Colors.orange.withOpacity(0.9),
-                                        child: Text(
-                                          '${idx + 1}',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              )
-                              .toList(growable: false),
-                        ),
-                    ],
-                  ),
-                ),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: const Text(
+                'Gestion de geovallas',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
               ),
             ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-              child: geofencesState.when(
-                data: (List<Geofence> data) {
-                  if (data.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.only(top: 32),
-                      child: Text('No hay geovallas asignadas todavia.'),
-                    );
-                  }
+            Expanded(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.only(bottom: media.viewInsets.bottom + 200),
+                child: Column(
+                  children: <Widget>[
+                    if (_showEditor) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: _buildEditorCard(),
+                      ),
+                    ],
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: SizedBox(
+                        height: keyboardOpen ? 220 : 340,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: FlutterMap(
+                            mapController: _mapController,
+                            options: MapOptions(
+                              initialCenter: initialCenter,
+                              initialZoom: _currentZoom,
 
-                  return ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: data.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (BuildContext context, int index) {
-                      final Geofence geofence = data[index];
-                      return _buildGeofenceTile(geofence);
-                    },
-                  );
-                },
-                loading: () => const Padding(
-                  padding: EdgeInsets.only(top: 24),
-                  child: CircularProgressIndicator(),
+                              onTap: (TapPosition _, LatLng point) {
+                                if (_isPickingCenter) {
+                                  setState(() {
+                                    _draftCenter = point;
+                                    _isPickingCenter = false;
+                                  });
+                                  return;
+                                }
+
+                                if (_editorType == GeofenceType.polygon &&
+                                    _isDrawingPolygon) {
+                                  setState(() {
+                                    _draftPath.add(point);
+                                  });
+                                  return;
+                                }
+                                // move selected vertex to tapped location
+                                if (_editorType == GeofenceType.polygon &&
+                                    _isMovingVertex &&
+                                    _selectedVertexIndex != null &&
+                                    _selectedVertexIndex! >= 0 &&
+                                    _selectedVertexIndex! < _draftPath.length) {
+                                  setState(() {
+                                    _draftPath[_selectedVertexIndex!] = point;
+                                    _isMovingVertex = false;
+                                    _selectedVertexIndex = null;
+                                  });
+                                  return;
+                                }
+                              },
+                            ),
+                            children: <Widget>[
+                              TileLayer(
+                                urlTemplate:
+                                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                userAgentPackageName: 'com.ontacoche.app',
+                              ),
+                              // current device marker when editor open
+                              if (_showEditor && initialPosition != null)
+                                MarkerLayer(
+                                  markers: <Marker>[
+                                    Marker(
+                                      point: LatLng(
+                                        initialPosition.latitude,
+                                        initialPosition.longitude,
+                                      ),
+                                      width: 40,
+                                      height: 40,
+                                      child: const Icon(
+                                        Icons.directions_car_rounded,
+                                        color: Colors.redAccent,
+                                        size: 32,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              CircleLayer(circles: circles),
+                              // existing polygon geofences
+                              if (geofences.isNotEmpty)
+                                PolygonLayer(
+                                  polygons: geofences
+                                      .where(
+                                        (g) => g.type == GeofenceType.polygon,
+                                      )
+                                      .map(
+                                        (g) => Polygon(
+                                          points: g.points
+                                              .map(
+                                                (p) => LatLng(
+                                                  p.latitude,
+                                                  p.longitude,
+                                                ),
+                                              )
+                                              .toList(growable: false),
+                                          color: Colors.blue.withValues(
+                                            alpha: 0.12,
+                                          ),
+                                          borderColor: Colors.blue,
+                                          borderStrokeWidth: 2,
+                                        ),
+                                      )
+                                      .toList(growable: false),
+                                ),
+                              // draft polygon preview
+                              if (_draftPath.isNotEmpty)
+                                PolygonLayer(
+                                  polygons: <Polygon>[
+                                    Polygon(
+                                      points: _draftPath,
+                                      color: Colors.orange.withValues(
+                                        alpha: 0.16,
+                                      ),
+                                      borderColor: Colors.orange,
+                                      borderStrokeWidth: 2,
+                                    ),
+                                  ],
+                                ),
+                              if (_draftCenter != null)
+                                MarkerLayer(
+                                  markers: <Marker>[
+                                    Marker(
+                                      point: _draftCenter!,
+                                      width: 36,
+                                      height: 36,
+                                      child: const Icon(
+                                        Icons.place_rounded,
+                                        size: 34,
+                                        color: Colors.orange,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              if (_draftPath.isNotEmpty)
+                                MarkerLayer(
+                                  markers: _draftPath
+                                      .asMap()
+                                      .entries
+                                      .map((MapEntry<int, LatLng> e) {
+                                        final int idx = e.key;
+                                        final LatLng p = e.value;
+                                        final bool selected =
+                                            _selectedVertexIndex == idx;
+                                        return Marker(
+                                          point: p,
+                                          width: 28,
+                                          height: 28,
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              setState(() {
+                                                _selectedVertexIndex = idx;
+                                              });
+                                            },
+                                            onLongPress: () {
+                                              setState(() {
+                                                _draftPath.removeAt(idx);
+                                                if (_selectedVertexIndex !=
+                                                    null) {
+                                                  _selectedVertexIndex = null;
+                                                }
+                                              });
+                                            },
+                                            child: CircleAvatar(
+                                              radius: selected ? 14 : 12,
+                                              backgroundColor: selected
+                                                  ? Colors.orange
+                                                  : Colors.orange.withOpacity(
+                                                      0.9,
+                                                    ),
+                                              child: Text(
+                                                '${idx + 1}',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      })
+                                      .toList(growable: false),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                      child: geofencesState.when(
+                        data: (List<Geofence> data) {
+                          if (data.isEmpty) {
+                            return const Padding(
+                              padding: EdgeInsets.only(top: 32),
+                              child: Text(
+                                'No hay geovallas asignadas todavia.',
+                              ),
+                            );
+                          }
+
+                          return ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: data.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (BuildContext context, int index) {
+                              final Geofence geofence = data[index];
+                              return _buildGeofenceTile(geofence);
+                            },
+                          );
+                        },
+                        loading: () => const Padding(
+                          padding: EdgeInsets.only(top: 24),
+                          child: CircularProgressIndicator(),
+                        ),
+                        error: (Object error, StackTrace _) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 24),
+                            child: Text('Error cargando geovallas: $error'),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-                error: (Object error, StackTrace _) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 24),
-                    child: Text('Error cargando geovallas: $error'),
-                  );
-                },
               ),
             ),
           ],
         ),
       ),
+    );
+
+    return Stack(
+      children: [
+        content,
+        Positioned(
+          bottom: 150,
+          right: 16,
+          child: !_showEditor
+              ? FloatingActionButton.extended(
+                  onPressed: _startCreateMode,
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Nueva geovalla'),
+                )
+              : FloatingActionButton.extended(
+                  onPressed: _exitEditor,
+                  icon: const Icon(Icons.close_rounded),
+                  label: const Text('Cerrar'),
+                ),
+        ),
+      ],
     );
   }
 
@@ -543,11 +688,11 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
           Text(
             _editingGeofenceId == null
                 ? (_editorType == GeofenceType.circle
-                    ? 'Crear geovalla circular'
-                    : 'Crear geovalla poligonal')
+                      ? 'Crear geovalla circular'
+                      : 'Crear geovalla poligonal')
                 : (_editorType == GeofenceType.circle
-                    ? 'Editar geovalla circular'
-                    : 'Editar geovalla poligonal'),
+                      ? 'Editar geovalla circular'
+                      : 'Editar geovalla poligonal'),
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 10),
@@ -684,9 +829,7 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                       )
                     : const Icon(Icons.save_rounded),
                 label: Text(
-                  _editingGeofenceId == null
-                      ? 'Crear'
-                      : 'Guardar cambios',
+                  _editingGeofenceId == null ? 'Crear' : 'Guardar cambios',
                 ),
               ),
             ],
