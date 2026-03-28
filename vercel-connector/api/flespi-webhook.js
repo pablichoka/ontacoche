@@ -524,6 +524,18 @@ async function persistEvent({ firestore, config, event, classification }) {
   delete writeSnapshot.source_ts_ms;
   delete writeSnapshot.updated_at;
 
+  // Only persist state when the event is a flespi-origin '0200' report.
+  // Detect flespi-origin by presence of server.timestamp, channel.id or a topic containing 'flespi'.
+  const serverTs = firstDefined(raw, ['server.timestamp', 'server_ts', 'timestamp']);
+  const rawTopic = firstDefined(raw, ['topic', 'event.topic', 'payload.topic']) || '';
+  const channelId = firstDefined(raw, ['channel.id', 'payload.channel.id']);
+  const isFromFlespi = serverTs != null || channelId != null || (typeof rawTopic === 'string' && rawTopic.toLowerCase().includes('flespi'));
+
+  if (String(event.reportCode || '') !== '0200' || !isFromFlespi) {
+    // Do not write any state/history for non-0200 or non-flespi messages.
+    return { alertCreated: false, dedupeKey: null, classification: effectiveClassification, skippedStateWrite: true };
+  }
+
   // if payload didn't include a device.name, try to preserve an existing one
   let existingStateDoc = null;
   try {
