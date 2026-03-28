@@ -280,12 +280,12 @@ Stream<List<DeviceAlert>> _watchFirestoreAlerts(Ref ref) async* {
   } else if (numericDeviceId != null) {
     query = FirebaseFirestore.instance
         .collection(collectionName)
-        .where('device_id', whereIn: <Object>[deviceId, numericDeviceId])
+        .where('device.id', whereIn: <Object>[deviceId, numericDeviceId])
         .limit(300);
   } else {
     query = FirebaseFirestore.instance
         .collection(collectionName)
-        .where('device_id', isEqualTo: deviceId)
+        .where('device.id', isEqualTo: deviceId)
         .limit(300);
   }
 
@@ -308,7 +308,11 @@ Stream<List<DeviceAlert>> _watchFirestoreAlerts(Ref ref) async* {
           ? allItems
           : allItems
                 .where((Map<String, dynamic> item) {
-                  final Object? rawId = item['device_id'];
+                  // support new nested `device.id` and legacy top-level `device_id`
+                  final dynamic deviceField = item['device'];
+                  final Object? rawId = (deviceField is Map)
+                      ? deviceField['id']
+                      : item['device_id'];
                   if (rawId == null) {
                     return false;
                   }

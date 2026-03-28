@@ -522,8 +522,9 @@ async function persistEvent({ firestore, config, event, classification }) {
 
   const snapshot = buildStateSnapshot(event, effectiveClassification, config);
 
-  if (classification.communicationActive || currentGeofenceStatus != null) {
-    await stateRef.set(snapshot, { merge: true });
+    if (classification.communicationActive || currentGeofenceStatus != null) {
+    // overwrite last state document to remove legacy top-level fields
+    await stateRef.set(snapshot);
 
     if (config.storeStateHistory) {
       await firestore.collection(config.stateHistoryCollection).add(snapshot);
@@ -571,44 +572,35 @@ async function persistEvent({ firestore, config, event, classification }) {
     const existing = await alertRef.get();
 
     // Build a compact alert document to store only essential fields
+    const alertDocBase = {
+      source_ts: snapshot.source_ts,
+      source_ts_ms: snapshot.source_ts_ms,
+      device: { id: String(event.deviceId), name: snapshot.device?.name || null },
+      dedupe_key: dedupeKey,
+      event_id: event.eventId || null,
+      event_kind: alertKind,
+      severity: effectiveClassification.severity,
+      checked: existing.exists ? Boolean(existing.data()?.checked) : false,
+      checked_at: existing.exists ? (existing.data()?.checked_at || null) : null,
+      created_at: existing.exists
+        ? (existing.data()?.created_at || new Date().toISOString())
+        : new Date().toISOString(),
+      last_seen_at: new Date().toISOString(),
+    };
+
     const alertDoc = effectiveClassification.vibrationAlarm
       ? {
-        source_ts: snapshot.source_ts,
-        source_ts_ms: snapshot.source_ts_ms,
-        device_id: snapshot.device_id,
+        ...alertDocBase,
         vibration_alarm: true,
         message: effectiveClassification.body || 'Se detecto vibración en el tracker',
-        dedupe_key: dedupeKey,
-        event_id: event.eventId || null,
-        event_kind: alertKind,
-        severity: effectiveClassification.severity,
-        checked: existing.exists ? Boolean(existing.data()?.checked) : false,
-        checked_at: existing.exists ? (existing.data()?.checked_at || null) : null,
-        created_at: existing.exists
-          ? (existing.data()?.created_at || new Date().toISOString())
-          : new Date().toISOString(),
-        last_seen_at: new Date().toISOString(),
       }
       : {
-        // geofence related alert: minimal fields
-        source_ts: snapshot.source_ts,
-        source_ts_ms: snapshot.source_ts_ms,
-        device_id: snapshot.device_id,
+        ...alertDocBase,
         geofence_alarm: Boolean(effectiveClassification.geofenceAlarm),
         geofence_enter: Boolean(effectiveClassification.geofenceEnter),
         geofence_exit: Boolean(effectiveClassification.geofenceExit),
         geofence_name: effectiveClassification.geofenceName || null,
         message: effectiveClassification.body || null,
-        dedupe_key: dedupeKey,
-        event_id: event.eventId || null,
-        event_kind: alertKind,
-        severity: effectiveClassification.severity,
-        checked: existing.exists ? Boolean(existing.data()?.checked) : false,
-        checked_at: existing.exists ? (existing.data()?.checked_at || null) : null,
-        created_at: existing.exists
-          ? (existing.data()?.created_at || new Date().toISOString())
-          : new Date().toISOString(),
-        last_seen_at: new Date().toISOString(),
       };
 
     await alertRef.set(alertDoc, { merge: true });

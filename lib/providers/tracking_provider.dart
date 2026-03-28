@@ -80,7 +80,7 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
     if (configuredDeviceId.isNotEmpty) {
       query = FirebaseFirestore.instance
           .collection(collectionName)
-          .where('device_id', isEqualTo: configuredDeviceId)
+          .where('device.id', isEqualTo: configuredDeviceId)
           .limit(1);
     }
 
@@ -97,10 +97,15 @@ class InitialTrackingController extends Notifier<InitialTrackingState> {
 
             final Map<String, dynamic>? selectedData = selected.data();
             final String resolvedDeviceId = configuredDeviceId.isNotEmpty
-                ? configuredDeviceId
-                : ((selectedData?['device_id'] ?? '').toString().isNotEmpty
-                      ? selectedData!['device_id'].toString()
-                      : selected.id);
+              ? configuredDeviceId
+              : (
+                // prefer nested device.id, then legacy device_id, then doc id
+                (selectedData != null && selectedData['device'] is Map && (selectedData['device']['id'] ?? '').toString().isNotEmpty)
+                  ? selectedData['device']['id'].toString()
+                  : ((selectedData?['device_id'] ?? '').toString().isNotEmpty
+                    ? selectedData!['device_id'].toString()
+                    : selected.id)
+                );
 
             unawaited(_handleRealtimeSnapshot(selected, resolvedDeviceId));
           },

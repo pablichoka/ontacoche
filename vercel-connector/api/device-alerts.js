@@ -91,13 +91,13 @@ module.exports = async function handler(req, res) {
       // use 'in' to match both numeric and string representations
       query = firestore
         .collection(alertsCollection)
-        .where('device_id', 'in', [deviceId, numeric])
+        .where('device.id', 'in', [deviceId, numeric])
         .orderBy('source_ts_ms', 'desc')
         .limit(limit);
     } else {
       query = firestore
         .collection(alertsCollection)
-        .where('device_id', '==', deviceId)
+        .where('device.id', '==', deviceId)
         .orderBy('source_ts_ms', 'desc')
         .limit(limit);
     }
