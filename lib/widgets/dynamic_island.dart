@@ -75,7 +75,6 @@ class _DynamicIslandState extends ConsumerState<DynamicIsland>
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeOutCubic,
                 width: _isExpanded ? maxWidth : compactWidth,
-                height: _isExpanded ? 280 : 56,
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
@@ -93,23 +92,39 @@ class _DynamicIslandState extends ConsumerState<DynamicIsland>
                   horizontal: _isExpanded ? 8 : 4,
                   vertical: _isExpanded ? 0 : 4,
                 ),
-                child: DefaultTextStyle(
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  child: IconTheme(
-                    data: const IconThemeData(color: Colors.white),
-                    child: _isExpanded
-                        ? Opacity(
-                            opacity: factor.clamp(0.0, 1.0),
-                            child: const SingleChildScrollView(
-                              physics: ClampingScrollPhysics(),
-                              child: _StatusCard(),
+                child: AnimatedSize(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: DefaultTextStyle(
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    child: IconTheme(
+                      data: const IconThemeData(color: Colors.white),
+                      child: _isExpanded
+                          ? Opacity(
+                              opacity: factor.clamp(0.0, 1.0),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxHeight:
+                                      MediaQuery.of(context).size.height * 0.8,
+                                ),
+                                child: SingleChildScrollView(
+                                  physics: ClampingScrollPhysics(),
+                                  child: const _StatusCard(),
+                                ),
+                              ),
+                            )
+                          : const Center(
+                              child: SizedBox(
+                                height: 56,
+                                child: _StatusCard(isCompact: true),
+                              ),
                             ),
-                          )
-                        : const Center(child: _StatusCard(isCompact: true)),
+                    ),
                   ),
                 ),
               ),

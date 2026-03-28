@@ -7,11 +7,18 @@ import '../models/device_alert.dart';
 import '../providers/api_provider.dart';
 import '../theme/app_colors.dart';
 
-class AlertsScreen extends ConsumerWidget {
+class AlertsScreen extends ConsumerStatefulWidget {
   const AlertsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AlertsScreen> createState() => _AlertsScreenState();
+}
+
+class _AlertsScreenState extends ConsumerState<AlertsScreen> {
+  bool _isDeleting = false;
+
+  @override
+  Widget build(BuildContext context) {
     final AsyncValue<List<DeviceAlert>> alertsState = ref.watch(
       alertsHistoryProvider,
     );
@@ -123,58 +130,68 @@ class AlertsScreen extends ConsumerWidget {
               shape: const CircleBorder(),
               clipBehavior: Clip.hardEdge,
               backgroundColor: Colors.redAccent,
-              onPressed: () async {
-                final bool? confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Borrar alertas'),
-                    content: const Text(
-                      '¿Eliminar todas las alertas del servidor? Esta acción es irreversible.',
+              onPressed: _isDeleting
+                  ? null
+                  : () async {
+                      final bool? confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Borrar alertas'),
+                          content: const Text(
+                            '¿Eliminar todas las alertas del servidor? Esta acción es irreversible.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(false),
+                              child: const Text('Cancelar'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(true),
+                              child: const Text('Eliminar'),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (confirmed != true) return;
+
+                      FocusScope.of(context).unfocus();
+                      setState(() => _isDeleting = true);
+
+                      try {
+                        final service = ref.read(vercelConnectorServiceProvider);
+                        final String deviceId = ref.read(deviceIdentProvider).trim();
+                        final int deleted = await service.deleteDeviceAlertsForDevice(
+                          deviceId,
+                        );
+                        ref.invalidate(alertsHistoryProvider);
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Eliminadas $deleted alertas')),
+                        );
+                      } catch (e) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Error al eliminar: $e')),
+                        );
+                      } finally {
+                        if (mounted) setState(() => _isDeleting = false);
+                      }
+                    },
+              child: _isDeleting
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Icon(
+                      Icons.delete_rounded,
+                      color: Colors.white,
+                      size: 24,
                     ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        child: const Text('Cancelar'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(true),
-                        child: const Text('Eliminar'),
-                      ),
-                    ],
-                  ),
-                );
-
-                if (confirmed != true) return;
-
-                showDialog<void>(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (_) => const Center(child: ExpressiveIndicator()),
-                );
-
-                try {
-                  final service = ref.read(vercelConnectorServiceProvider);
-                  final String deviceId = ref.read(deviceIdentProvider).trim();
-                  final int deleted = await service.deleteDeviceAlertsForDevice(
-                    deviceId,
-                  );
-                  ref.invalidate(alertsHistoryProvider);
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Eliminadas $deleted alertas')),
-                  );
-                } catch (e) {
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error al eliminar: $e')),
-                  );
-                }
-              },
-              child: const Icon(
-                Icons.delete_rounded,
-                color: Colors.white,
-                size: 24,
-              ),
             ),
           ),
         ],

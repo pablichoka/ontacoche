@@ -9,11 +9,18 @@ import '../utils/parsers.dart';
 import '../widgets/expressive_indicator.dart';
 import 'trip_playback_screen.dart';
 
-class HistoryScreen extends ConsumerWidget {
+class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends ConsumerState<HistoryScreen> {
+  bool _isDeleting = false;
+
+  @override
+  Widget build(BuildContext context) {
     final AsyncValue<List<Trip>> tripsState = ref.watch(tripsProvider);
 
     return Scaffold(
@@ -81,72 +88,72 @@ class HistoryScreen extends ConsumerWidget {
           Positioned(
             right: 16,
             bottom: 150,
-            child: FloatingActionButton(
+              child: FloatingActionButton(
               shape: const CircleBorder(),
               clipBehavior: Clip.hardEdge,
               backgroundColor: Colors.redAccent,
-              onPressed: () async {
-                final bool? confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Borrar trayectos'),
-                    content: const Text(
-                      '¿Eliminar todos los trayectos del servidor? Esta acción es irreversible.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        child: const Text('Cancelar'),
+              onPressed: _isDeleting
+                  ? null
+                  : () async {
+                      final bool? confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Borrar trayectos'),
+                          content: const Text(
+                            '¿Eliminar todos los trayectos del servidor? Esta acción es irreversible.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(false),
+                              child: const Text('Cancelar'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(true),
+                              child: const Text('Eliminar'),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (confirmed != true) return;
+
+                      FocusScope.of(context).unfocus();
+                      setState(() => _isDeleting = true);
+
+                      try {
+                        final service = ref.read(vercelConnectorServiceProvider);
+                        final String deviceId = ref.read(deviceIdentProvider).trim();
+                        final int deleted = await service.deleteTripsForDevice(
+                          deviceId,
+                        );
+                        ref.invalidate(tripsProvider);
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Eliminados $deleted trayectos')),
+                        );
+                      } catch (e) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Error al eliminar: $e')),
+                        );
+                      } finally {
+                        if (mounted) setState(() => _isDeleting = false);
+                      }
+                    },
+              child: _isDeleting
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(true),
-                        child: const Text('Eliminar'),
-                      ),
-                    ],
-                  ),
-                );
-
-                if (confirmed != true) return;
-
-                FocusScope.of(context).unfocus();
-
-                showDialog<void>(
-                  context: context,
-                  barrierDismissible: false,
-                  useRootNavigator: true,
-                  builder: (_) => WillPopScope(
-                    onWillPop: () async => false,
-                    child: const Dialog(
-                      backgroundColor: Colors.transparent,
-                      elevation: 0,
-                      child: Center(child: ExpressiveIndicator()),
+                    )
+                  : const Icon(
+                      Icons.delete_rounded,
+                      color: Colors.white,
+                      size: 24,
                     ),
-                  ),
-                );
-
-                try {
-                  final service = ref.read(vercelConnectorServiceProvider);
-                  final String deviceId = ref.read(deviceIdentProvider).trim();
-                  final int deleted = await service.deleteTripsForDevice(
-                    deviceId,
-                  );
-                  ref.invalidate(tripsProvider);
-                  Navigator.of(context, rootNavigator: true).pop(); // close progress
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Eliminados $deleted trayectos')),
-                  );
-                } catch (e) {
-                  Navigator.of(context, rootNavigator: true).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error al eliminar: $e')),
-                  );
-                }
-              },
-              child: const Icon(
-                Icons.delete_rounded,
-                color: Colors.white,
-                size: 24,
-              ),
             ),
           ),
         ],
