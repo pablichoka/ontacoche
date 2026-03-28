@@ -407,7 +407,7 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
               color: const Color(0xFF131313),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: const Text(
-                'GESTIÓN DE GEOVALLAS',
+                'Gestión de geovallas',
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 20,

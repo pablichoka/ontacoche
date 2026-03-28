@@ -28,4 +28,18 @@ class TripService {
       return const <Trip>[];
     }
   }
+
+  Stream<List<Trip>> watchTrips(String deviceIdent, {int limit = 20}) {
+    return FirebaseFirestore.instance
+        .collection(_collectionName)
+        .where('deviceIdent', isEqualTo: deviceIdent)
+        .orderBy('startTime', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs
+              .map((doc) => Trip.fromFirestore(doc.id, doc.data()))
+              .toList(growable: false);
+        });
+  }
 }

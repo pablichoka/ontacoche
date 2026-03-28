@@ -12,6 +12,7 @@ import '../models/geofence.dart';
 import '../models/tracking_flow.dart';
 import '../providers/api_provider.dart';
 import '../providers/vehicle_state_provider.dart';
+import '../theme/app_colors.dart';
 import '../widgets/dynamic_island.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
@@ -185,164 +186,200 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               // delete parking button (shown when parking exists)
-              Builder(builder: (BuildContext ctx) {
-                final List<Geofence> sourceList = managedGeofencesState.hasValue
-                    ? managedGeofencesState.value!
-                    : (geofencesState.hasValue ? geofencesState.value! : const <Geofence>[]);
-                final bool hasParking = sourceList.any((g) => g.priority == 100);
-                if (!hasParking) {
-                  return const SizedBox(
-                    
+              Builder(
+                builder: (BuildContext ctx) {
+                  final List<Geofence> sourceList =
+                      managedGeofencesState.hasValue
+                      ? managedGeofencesState.value!
+                      : (geofencesState.hasValue
+                            ? geofencesState.value!
+                            : const <Geofence>[]);
+                  final bool hasParking = sourceList.any(
+                    (g) => g.priority == 100,
                   );
-                }
+                  if (!hasParking) {
+                    return const SizedBox();
+                  }
 
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 20),
-                  child: FloatingActionButton(
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    child: FloatingActionButton(
+                      shape: const CircleBorder(),
+                      clipBehavior: Clip.hardEdge,
+                      backgroundColor: AppColors.surfaceContainerLow,
+                      onPressed: () async {
+                        if (_isParkingDeleting) return;
+
+                        final searchList =
+                            managedGeofencesState.valueOrNull ??
+                            geofencesState.valueOrNull ??
+                            const <Geofence>[];
+                        final parking = searchList
+                            .where((g) => g.priority == 100)
+                            .firstOrNull;
+
+                        if (parking == null) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('No se encontró parking a borrar.'),
+                            ),
+                          );
+                          return;
+                        }
+
+                        setState(() => _isParkingDeleting = true);
+                        try {
+                          await ref
+                              .read(vercelConnectorServiceProvider)
+                              .deleteGeofence(parking.id);
+
+                          if (!mounted) return;
+
+                          ref.invalidate(managedGeofencesProvider);
+                          ref.invalidate(deviceGeofencesProvider);
+
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              behavior: SnackBarBehavior.floating,
+                              margin: EdgeInsets.fromLTRB(16, 0, 16, 100),
+                              content: Text('Parking eliminado.'),
+                            ),
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              behavior: SnackBarBehavior.floating,
+                              margin: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                              content: Text('Error borrando: $e'),
+                            ),
+                          );
+                        } finally {
+                          if (mounted)
+                            setState(() => _isParkingDeleting = false);
+                        }
+                      },
+                      child: _isParkingDeleting
+                          ? const _ExpressiveIndicator(
+                              color: Colors.redAccent,
+                              strokeWidth: 3,
+                              size: 20,
+                            )
+                          : const Icon(
+                              Icons.delete_outline_rounded,
+                              color: Colors.redAccent,
+                              size: 24,
+                            ),
+                    ),
+                  );
+                },
+              ),
+              // FAB
+              Builder(
+                builder: (BuildContext ctx) {
+                  final List<Geofence> sourceList2 =
+                      managedGeofencesState.hasValue
+                      ? managedGeofencesState.value!
+                      : (geofencesState.hasValue
+                            ? geofencesState.value!
+                            : const <Geofence>[]);
+                  final bool hasParking = sourceList2.any(
+                    (g) => g.priority == 100,
+                  );
+
+                  return FloatingActionButton(
                     shape: const CircleBorder(),
                     clipBehavior: Clip.hardEdge,
-                    backgroundColor: Colors.white,
+                    backgroundColor: hasParking
+                        ? AppColors.surfaceContainerLow
+                        : AppColors.brand,
                     onPressed: () async {
-                      if (_isParkingDeleting) return;
-                      Geofence? parking;
-                      final List<Geofence> searchList = managedGeofencesState.hasValue
-                          ? managedGeofencesState.value!
-                          : (geofencesState.hasValue ? geofencesState.value! : const <Geofence>[]);
-                      for (final Geofence g in searchList) {
-                        if (g.priority == 100) {
-                          parking = g;
-                          break;
-                        }
-                      }
-                      if (parking == null) {
-                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('No se encontró parking a borrar.'),
-                          ),
-                        );
-                        return;
-                      }
+                      final searchList2 =
+                          managedGeofencesState.valueOrNull ??
+                          geofencesState.valueOrNull ??
+                          const <Geofence>[];
+                      final bool hasParkingActual = searchList2.any(
+                        (g) => g.priority == 100,
+                      );
 
-                      setState(() => _isParkingDeleting = true);
-                      try {
-                        await ref
-                            .read(vercelConnectorServiceProvider)
-                            .deleteGeofence(parking.id);
-                        ref.invalidate(managedGeofencesProvider);
-                        ref.invalidate(deviceGeofencesProvider);
+                      if (hasParkingActual) {
+                        if (!mounted) return;
                         ScaffoldMessenger.of(context).hideCurrentSnackBar();
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             behavior: SnackBarBehavior.floating,
                             margin: EdgeInsets.fromLTRB(16, 0, 16, 100),
-                            content: Text('Parking eliminado.'),
-                          ),
-                        );
-                      } catch (e) {
-                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            behavior: SnackBarBehavior.floating,
-                            margin: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                            content: Text('Error borrando: $e'),
-                          ),
-                        );
-                      } finally {
-                        if (mounted) setState(() => _isParkingDeleting = false);
-                      }
-                    },
-                    child: _isParkingDeleting
-                        ? const _ExpressiveIndicator(
-                            color: Colors.redAccent,
-                            strokeWidth: 3,
-                            size: 20,
-                          )
-                        : const Icon(
-                            Icons.delete_outline_rounded,
-                            color: Colors.redAccent,
-                            size: 24,
-                          ),
-                  ),
-                );
-              }),
-              // FAB
-              Builder(builder: (BuildContext ctx) {
-                final List<Geofence> sourceList2 = managedGeofencesState.hasValue
-                    ? managedGeofencesState.value!
-                    : (geofencesState.hasValue ? geofencesState.value! : const <Geofence>[]);
-                final bool hasParking = sourceList2.any((g) => g.priority == 100);
-
-                return FloatingActionButton(
-                  shape: const CircleBorder(),
-                  clipBehavior: Clip.hardEdge,
-                  backgroundColor:
-                      hasParking ? Colors.grey.shade400 : Colors.blue,
-                    onPressed: () async {
-                    if (hasParking) {
-                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          behavior: SnackBarBehavior.floating,
-                          margin: EdgeInsets.fromLTRB(16, 0, 16, 100),
-                          content: Text('Ya existe un parking creado.'),
-                        ),
-                      );
-                      return;
-                    }
-
-                    if (_latestPosition == null) {
-                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          behavior: SnackBarBehavior.floating,
-                          margin: EdgeInsets.fromLTRB(16, 0, 16, 100),
-                          content: Text('No hay ubicación disponible.'),
-                        ),
-                      );
-                      return;
-                    }
-
-                    if (_isParkingCreating) return;
-
-                    setState(() => _isParkingCreating = true);
-                    try {
-                      final String deviceId = ref.read(deviceIdentProvider).trim();
-                      if (deviceId.isEmpty) {
-                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('DEVICE_IDENT no configurado.'),
+                            content: Text('Ya existe un parking creado.'),
                           ),
                         );
                         return;
                       }
 
-                      final String name = 'parking-${DateTime.now().toUtc().millisecondsSinceEpoch}';
-                      // get configured diameter (meters) from settings
-                      double diameterMeters = 100.0;
-                      try {
-                        final settings = await ref.read(settingsRepositoryProvider.future);
-                        diameterMeters = settings.parkingDiameterMeters;
-                      } catch (_) {
-                        // fallback to default
-                        diameterMeters = 100.0;
+                      if (_latestPosition == null) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            behavior: SnackBarBehavior.floating,
+                            margin: EdgeInsets.fromLTRB(16, 0, 16, 100),
+                            content: Text('No hay ubicación disponible.'),
+                          ),
+                        );
+                        return;
                       }
-                      final double radiusKm = (diameterMeters / 2.0) / 1000.0;
 
-                      await ref
-                          .read(vercelConnectorServiceProvider)
-                          .createCircleGeofence(
-                        deviceId: deviceId,
-                        name: name,
-                        priority: 100,
-                        latitude: _latestPosition!.latitude,
-                        longitude: _latestPosition!.longitude,
-                        radiusKm: radiusKm,
-                      );
+                      if (_isParkingCreating) return;
 
-                      ref.invalidate(managedGeofencesProvider);
-                      ref.invalidate(deviceGeofencesProvider);
+                      setState(() => _isParkingCreating = true);
+                      try {
+                        final String deviceId = ref
+                            .read(deviceIdentProvider)
+                            .trim();
+                        if (deviceId.isEmpty) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('DEVICE_IDENT no configurado.'),
+                            ),
+                          );
+                          return;
+                        }
+
+                        final String name =
+                            'parking-${DateTime.now().toUtc().millisecondsSinceEpoch}';
+                        // get configured diameter (meters) from settings
+                        double diameterMeters = 100.0;
+                        try {
+                          final settings = await ref.read(
+                            settingsRepositoryProvider.future,
+                          );
+                          diameterMeters = settings.parkingDiameterMeters;
+                        } catch (_) {
+                          // fallback to default
+                          diameterMeters = 100.0;
+                        }
+                        final double radiusKm = (diameterMeters / 2.0) / 1000.0;
+
+                        await ref
+                            .read(vercelConnectorServiceProvider)
+                            .createCircleGeofence(
+                              deviceId: deviceId,
+                              name: name,
+                              priority: 100,
+                              latitude: _latestPosition!.latitude,
+                              longitude: _latestPosition!.longitude,
+                              radiusKm: radiusKm,
+                            );
+
+                        ref.invalidate(managedGeofencesProvider);
+                        ref.invalidate(deviceGeofencesProvider);
+
+                        if (!mounted) return;
 
                         ScaffoldMessenger.of(context).hideCurrentSnackBar();
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -352,7 +389,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                             content: Text('Parking creado.'),
                           ),
                         );
-                    } catch (e) {
+                      } catch (e) {
+                        if (!mounted) return;
                         ScaffoldMessenger.of(context).hideCurrentSnackBar();
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -361,23 +399,24 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                             content: Text('Error creando parking: $e'),
                           ),
                         );
-                    } finally {
-                      if (mounted) setState(() => _isParkingCreating = false);
-                    }
-                  },
-                  child: _isParkingCreating
-                      ? const _ExpressiveIndicator(
-                          color: Colors.white,
-                          strokeWidth: 3,
-                          size: 20,
-                        )
-                      : const Icon(
-                          Icons.local_parking,
-                          size: 24,
-                          color: Colors.white,
-                        ),
-                );
-              }),
+                      } finally {
+                        if (mounted) setState(() => _isParkingCreating = false);
+                      }
+                    },
+                    child: _isParkingCreating
+                        ? const _ExpressiveIndicator(
+                            color: Colors.white,
+                            strokeWidth: 3,
+                            size: 20,
+                          )
+                        : const Icon(
+                            Icons.local_parking,
+                            size: 24,
+                            color: Colors.white,
+                          ),
+                  );
+                },
+              ),
             ],
           ),
         ),
@@ -428,7 +467,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           (Geofence geofence) => Polygon(
             points: geofence.points
                 .map(
-                  (GeofencePoint point) => LatLng(point.latitude, point.longitude),
+                  (GeofencePoint point) =>
+                      LatLng(point.latitude, point.longitude),
                 )
                 .toList(growable: false),
             color: Colors.blue.withValues(alpha: 0.18),
@@ -448,7 +488,7 @@ class _GpsMarker extends StatelessWidget {
     return DecoratedBox(
       decoration: const BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white,
+        color: AppColors.surfaceContainerLow,
         boxShadow: <BoxShadow>[
           BoxShadow(
             color: Color(0x33000000),
@@ -462,7 +502,7 @@ class _GpsMarker extends StatelessWidget {
         child: DecoratedBox(
           decoration: const BoxDecoration(
             shape: BoxShape.circle,
-            color: Color(0xFF1D4ED8),
+            color: AppColors.brand,
           ),
           child: const Icon(
             Icons.navigation_rounded,
@@ -502,13 +542,11 @@ class _ExpressiveIndicatorState extends State<_ExpressiveIndicator>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..repeat();
-    _scale = TweenSequence<double>(
-      <TweenSequenceItem<double>>[
-        TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 40),
-        TweenSequenceItem(tween: Tween(begin: 1.08, end: 0.94), weight: 40),
-        TweenSequenceItem(tween: Tween(begin: 0.94, end: 1.0), weight: 20),
-      ],
-    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+    _scale = TweenSequence<double>(<TweenSequenceItem<double>>[
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.08, end: 0.94), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 0.94, end: 1.0), weight: 20),
+    ]).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
   }
 
   @override

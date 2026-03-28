@@ -556,11 +556,14 @@ async function persistEvent({ firestore, config, event, classification }) {
         Object.assign(newPos, existingPos);
       }
       
-      const identicalPos = 
+      const isStationary = existingPos.speed === 0 && newPos.speed === 0;
+      
+      const identicalPos = isStationary || (
         existingPos.latitude === newPos.latitude && 
         existingPos.longitude === newPos.longitude &&
         existingPos.speed === newPos.speed &&
-        existingPos.direction === newPos.direction;
+        existingPos.direction === newPos.direction
+      );
         
       const existingActive = Boolean(existingData.communication_active);
       const newActive = Boolean(writeSnapshot.communication_active);
@@ -842,7 +845,47 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ ok: false, error: 'invalid events payload' });
   }
 
-  const events = rawEvents.map(normalizeEvent);
+  function consolidateEvents(eventsList) {
+    const byDevice = new Map();
+    const nonDeviceEvents = [];
+
+    for (const event of eventsList) {
+      const key = event.deviceId || event.userId;
+      if (!key) {
+        nonDeviceEvents.push(event);
+        continue;
+      }
+
+      if (!byDevice.has(key)) {
+        byDevice.set(key, { ...event });
+      } else {
+        const existing = byDevice.get(key);
+        existing.raw = { ...existing.raw, ...event.raw };
+        
+        const newTs = parseTimestampToMs(event.ts);
+        const oldTs = parseTimestampToMs(existing.ts);
+        if (newTs && oldTs && newTs > oldTs) {
+          existing.ts = event.ts;
+        } else if (newTs && !oldTs) {
+          existing.ts = event.ts;
+        }
+        
+        if (event.eventId && !existing.eventId) existing.eventId = event.eventId;
+        if (event.reportCode) existing.reportCode = event.reportCode;
+        if (event.logCode) existing.logCode = event.logCode;
+        if (event.geofenceId) existing.geofenceId = event.geofenceId;
+        
+        if (event.eventType && event.eventType !== 'flespi_event') existing.eventType = event.eventType;
+        if (event.title && event.title !== 'Alerta OntaCoche') existing.title = event.title;
+        if (event.body && event.body !== 'Se detecto una alerta en el tracker') existing.body = event.body;
+        if (event.severity && event.severity !== 'info') existing.severity = event.severity;
+      }
+    }
+
+    return [...byDevice.values(), ...nonDeviceEvents];
+  }
+
+  const events = consolidateEvents(rawEvents.map(normalizeEvent));
 
   try {
     const firestore = getFirestore(config);

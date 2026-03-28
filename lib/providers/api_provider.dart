@@ -61,14 +61,26 @@ final initialDevicePositionProvider = FutureProvider<DevicePosition?>((
       .getCurrentDeviceState(deviceId);
 });
 
-final deviceGeofencesProvider = FutureProvider<List<Geofence>>((Ref ref) async {
+final deviceGeofencesProvider = StreamProvider<List<Geofence>>((
+  Ref ref,
+) async* {
   final String deviceId = ref.watch(deviceIdentProvider).trim();
   if (deviceId.isEmpty) {
-    return const <Geofence>[];
+    yield const <Geofence>[];
+    return;
   }
-  return ref
-      .watch(vercelConnectorServiceProvider)
-      .getManagedGeofences(deviceId);
+
+  final service = ref.watch(vercelConnectorServiceProvider);
+  bool disposed = false;
+  ref.onDispose(() => disposed = true);
+
+  while (!disposed) {
+    try {
+      final current = await service.getManagedGeofences(deviceId);
+      if (!disposed) yield current;
+    } catch (_) {}
+    await Future<void>.delayed(const Duration(seconds: 15));
+  }
 });
 
 final deviceDetailsProvider = FutureProvider<Map<String, dynamic>>((
@@ -120,18 +132,8 @@ final vercelConnectorServiceProvider = Provider<VercelConnectorService>((
   return service;
 });
 
-final managedGeofencesProvider = FutureProvider<List<Geofence>>((
-  Ref ref,
-) async {
-  final String deviceId = ref.watch(deviceIdentProvider).trim();
-  if (deviceId.isEmpty) {
-    return const <Geofence>[];
-  }
-
-  final VercelConnectorService service = ref.watch(
-    vercelConnectorServiceProvider,
-  );
-  return service.getManagedGeofences(deviceId);
+final managedGeofencesProvider = StreamProvider<List<Geofence>>((Ref ref) {
+  return ref.watch(deviceGeofencesProvider.stream);
 });
 
 final flespiExecuteCommandProvider = Provider<FlespiExecuteCommand>((Ref ref) {

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/vehicle_state_provider.dart';
 import '../models/device_alert.dart';
+import '../theme/app_colors.dart';
 
 class AlertsScreen extends ConsumerWidget {
   const AlertsScreen({super.key});
@@ -14,13 +15,13 @@ class AlertsScreen extends ConsumerWidget {
     );
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text(
           'Alertas',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.surface,
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
@@ -34,7 +35,7 @@ class AlertsScreen extends ConsumerWidget {
                   const Icon(
                     Icons.notifications_off_rounded,
                     size: 48,
-                    color: Colors.grey,
+                    color: AppColors.muted,
                   ),
                   const SizedBox(height: 16),
                   const Text('No hay alertas recientes'),
@@ -65,7 +66,7 @@ class AlertsScreen extends ConsumerWidget {
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 0.6,
-                          color: Colors.grey.shade600,
+                          color: AppColors.muted,
                         ),
                       ),
                     ),
@@ -89,7 +90,7 @@ class AlertsScreen extends ConsumerWidget {
               const Icon(
                 Icons.notifications_off_rounded,
                 size: 48,
-                color: Colors.grey,
+                color: AppColors.muted,
               ),
               const SizedBox(height: 16),
               const Text('No hay alertas recientes'),
@@ -183,11 +184,11 @@ class _AlertCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withValues(alpha: 0.16),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -225,8 +226,8 @@ class _AlertCard extends StatelessWidget {
                     ),
                     Text(
                       _formatTime(alert.timestamp),
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
+                      style: const TextStyle(
+                        color: AppColors.muted,
                         fontSize: 12,
                       ),
                     ),
@@ -235,7 +236,7 @@ class _AlertCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   alert.message,
-                  style: TextStyle(color: Colors.grey.shade800, fontSize: 14),
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
                 ),
               ],
             ),

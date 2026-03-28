@@ -430,59 +430,54 @@ final realtimeTrackingIndicatorProvider = Provider<TrackingIndicatorData>((
 // Alerts Providers
 // ----------------------------------------------------------------------
 
-final alertsHistoryProvider = FutureProvider<List<DeviceAlert>>((
+final alertsHistoryProvider = StreamProvider<List<DeviceAlert>>((
   Ref ref,
-) async {
+) async* {
   final String deviceId = (dotenv.env['DEVICE_ID'] ?? '').trim();
-  if (deviceId.isEmpty) return const <DeviceAlert>[];
+  if (deviceId.isEmpty) {
+    yield const <DeviceAlert>[];
+    return;
+  }
 
-  try {
-    final List<DeviceAlert> alerts = await ref
-        .read(vercelConnectorServiceProvider)
-        .getDeviceAlerts(deviceId, limit: 100);
-    final byKey = <String, DeviceAlert>{};
-    for (final alert in alerts) {
-      final key = alert.id?.isNotEmpty == true
-          ? 'id:${alert.id}'
-          : alert.dedupeKey?.isNotEmpty == true
-          ? 'dedupe:${alert.dedupeKey}'
-          : 'sig:${alert.type.name}:${alert.timestamp.toIso8601String()}:${alert.isEntering}:${alert.message}:${alert.geofenceName ?? ''}';
-      final existing = byKey[key];
-      if (existing == null || alert.timestamp.isAfter(existing.timestamp)) {
-        byKey[key] = alert;
+  bool disposed = false;
+  ref.onDispose(() => disposed = true);
+
+  while (!disposed) {
+    try {
+      final List<DeviceAlert> alerts = await ref
+          .read(vercelConnectorServiceProvider)
+          .getDeviceAlerts(deviceId, limit: 100);
+      final byKey = <String, DeviceAlert>{};
+      for (final alert in alerts) {
+        final key = alert.id?.isNotEmpty == true
+            ? 'id:${alert.id}'
+            : alert.dedupeKey?.isNotEmpty == true
+            ? 'dedupe:${alert.dedupeKey}'
+            : 'sig:${alert.type.name}:${alert.timestamp.toIso8601String()}:${alert.isEntering}:${alert.message}:${alert.geofenceName ?? ''}';
+        final existing = byKey[key];
+        if (existing == null || alert.timestamp.isAfter(existing.timestamp)) {
+          byKey[key] = alert;
+        }
       }
-    }
-    return byKey.values.toList()
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-  } catch (_) {
-    return const <DeviceAlert>[];
+      final sorted = byKey.values.toList()
+        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+      if (!disposed) {
+        yield sorted;
+      }
+    } catch (_) {}
+
+    await Future<void>.delayed(const Duration(seconds: 15));
   }
 });
 
 final alertStreamProvider = StreamProvider<DeviceAlert>((Ref ref) async* {
-  bool disposed = false;
-  ref.onDispose(() => disposed = true);
-
-  String? lastSignature;
-  while (!disposed) {
-    try {
-      final String deviceId = (dotenv.env['DEVICE_ID'] ?? '').trim();
-      if (deviceId.isNotEmpty) {
-        final List<DeviceAlert> alerts = await ref
-            .read(vercelConnectorServiceProvider)
-            .getDeviceAlerts(deviceId, limit: 100);
-        if (alerts.isNotEmpty) {
-          final DeviceAlert first = alerts.first;
-          final signature =
-              '${first.id ?? ''}:${first.dedupeKey ?? ''}:${first.timestamp.toIso8601String()}';
-          if (signature != lastSignature) {
-            lastSignature = signature;
-            yield first;
-          }
-        }
-      }
-    } catch (_) {}
-    await Future<void>.delayed(const Duration(seconds: 15));
+  await for (final List<DeviceAlert> alerts in ref.watch(
+    alertsHistoryProvider.stream,
+  )) {
+    if (alerts.isNotEmpty) {
+      yield alerts.first;
+    }
   }
 });
 
@@ -536,9 +531,8 @@ final markAllAlertsSeenUseCaseProvider = Provider<Future<void> Function()>((
   Ref ref,
 ) {
   return () async {
-    final List<DeviceAlert> alerts = await ref.read(
-      alertsHistoryProvider.future,
-    );
+    final List<DeviceAlert>? alerts = ref.read(alertsHistoryProvider).value;
+    if (alerts == null || alerts.isEmpty) return;
     final List<DeviceAlert> unseen = alerts
         .where((alert) => !alert.checked)
         .where((alert) => (alert.id ?? '').isNotEmpty)

@@ -1,16 +1,16 @@
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/trip.dart';
 import '../services/trip_service.dart';
+import 'api_provider.dart';
 
 final tripServiceProvider = Provider<TripService>((Ref ref) {
   return TripService();
 });
 
-final tripsProvider = FutureProvider<List<Trip>>((Ref ref) async {
-  final String deviceId = (dotenv.env['DEVICE_ID'] ?? '').trim();
-  if (deviceId.isEmpty) return const <Trip>[];
+final tripsProvider = StreamProvider<List<Trip>>((Ref ref) {
+  final String deviceId = ref.watch(deviceIdentProvider).trim();
+  if (deviceId.isEmpty) return Stream.value(const <Trip>[]);
   final TripService service = ref.watch(tripServiceProvider);
-  return service.fetchTrips(deviceId);
+  return service.watchTrips(deviceId);
 });

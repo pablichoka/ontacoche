@@ -90,12 +90,12 @@ class _TripCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: AppColors.surfaceContainerLow,
           borderRadius: BorderRadius.circular(24),
           boxShadow: <BoxShadow>[
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 18,
+              color: AppColors.brand.withValues(alpha: 0.04),
+              blurRadius: 24,
               offset: const Offset(0, 8),
             ),
           ],
@@ -106,7 +106,7 @@ class _TripCard extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: AppColors.brandSoft,
+                color: AppColors.brand.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: const Icon(Icons.route_rounded, color: AppColors.brand),

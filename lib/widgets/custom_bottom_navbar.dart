@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_colors.dart';
+
 class CustomBottomNavbar extends StatelessWidget {
   const CustomBottomNavbar({
     super.key,
@@ -43,9 +45,9 @@ class CustomBottomNavbar extends StatelessWidget {
         alignment: Alignment.bottomCenter,
         child: Material(
           elevation: 8,
-          color: const Color(0xFFF8FAFC).withValues(alpha: 0.96),
+          color: AppColors.surfaceContainerLowest.withValues(alpha: 0.90),
           borderRadius: BorderRadius.circular(999),
-          shadowColor: Colors.black.withValues(alpha: 0.18),
+          shadowColor: AppColors.brand.withValues(alpha: 0.04),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: Row(
@@ -56,9 +58,7 @@ class CustomBottomNavbar extends StatelessWidget {
                 final Widget icon = Icon(
                   isSelected ? item.selectedIcon : item.icon,
                   size: 28,
-                  color: isSelected
-                      ? const Color(0xFF0F172A)
-                      : const Color(0xFF475569),
+                  color: isSelected ? AppColors.brand : AppColors.muted,
                 );
 
                 return Padding(
@@ -100,7 +100,9 @@ class _NavbarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isSelected ? const Color(0xFFD9E7FF) : Colors.transparent,
+      color: isSelected
+          ? AppColors.brand.withValues(alpha: 0.1)
+          : Colors.transparent,
       shape: const CircleBorder(),
       child: InkWell(
         onTap: onTap,

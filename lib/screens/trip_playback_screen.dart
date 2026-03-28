@@ -230,7 +230,7 @@ class _InfoOverlay extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.92),
+        color: AppColors.surfaceContainerLow.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(16),
         boxShadow: <BoxShadow>[
           BoxShadow(
@@ -311,7 +311,7 @@ class _ControlPanel extends StatelessWidget {
         20 + MediaQuery.of(context).padding.bottom,
       ),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.surfaceContainerLow,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: <BoxShadow>[
           BoxShadow(
@@ -384,7 +384,7 @@ class _SpeedButton extends StatelessWidget {
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w700,
-            color: active ? Colors.white : AppColors.brand,
+            color: active ? AppColors.surface : AppColors.brand,
           ),
         ),
       ),
@@ -402,7 +402,7 @@ class _CircleMarker extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surfaceContainerLow,
         shape: BoxShape.circle,
         boxShadow: <BoxShadow>[
           BoxShadow(
@@ -416,7 +416,7 @@ class _CircleMarker extends StatelessWidget {
         padding: const EdgeInsets.all(6),
         child: DecoratedBox(
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          child: Icon(icon, color: Colors.white, size: 16),
+          child: Icon(icon, color: AppColors.surface, size: 16),
         ),
       ),
     );

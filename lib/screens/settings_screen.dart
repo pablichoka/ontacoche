@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/api_provider.dart';
 import '../providers/settings_provider.dart';
+import '../theme/app_colors.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -101,18 +102,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final double kbHeight = MediaQuery.of(context).viewInsets.bottom;
 
     return ColoredBox(
-      color: const Color(0xFFF8FAFC),
+      color: AppColors.background,
       child: SafeArea(
         bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              color: Colors.white,
+              color: AppColors.surface,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: const Text(
                 'Ajustes',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20,
+                  color: Colors.white,
+                  letterSpacing: -0.5,
+                ),
               ),
             ),
             Expanded(
@@ -142,8 +148,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                   focusNode: _nameFocusNode,
                                   decoration: InputDecoration(
                                     hintText: 'Ej: Mi Coche',
+                                    hintStyle: const TextStyle(
+                                      color: AppColors.muted,
+                                    ),
                                     filled: true,
-                                    fillColor: Colors.grey.shade100,
+                                    fillColor: AppColors.surface,
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(12),
                                       borderSide: BorderSide.none,
@@ -162,10 +171,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                       onPressed: _saveDeviceName,
                                       icon: const Icon(Icons.check_rounded),
                                       style: IconButton.styleFrom(
-                                        backgroundColor: const Color(
-                                          0xFF1D4ED8,
-                                        ),
-                                        foregroundColor: Colors.white,
+                                        backgroundColor: AppColors.brand,
+                                        foregroundColor: AppColors.surface,
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(
                                             12,
@@ -201,8 +208,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                           ),
                                       decoration: InputDecoration(
                                         hintText: '100',
+                                        hintStyle: const TextStyle(
+                                          color: AppColors.muted,
+                                        ),
                                         filled: true,
-                                        fillColor: Colors.grey.shade100,
+                                        fillColor: AppColors.surface,
                                         border: OutlineInputBorder(
                                           borderRadius: BorderRadius.circular(
                                             12,
@@ -271,7 +281,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                       }
                                     },
                                     icon: const Icon(Icons.save_rounded),
-                                    label: const Text('Guardar'),
+                                    label: const Text(
+                                      'Guardar',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: AppColors.brand,
+                                      foregroundColor: AppColors.surface,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -295,7 +314,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         const Center(
                           child: Text(
                             'Ontacoche v1.2.0',
-                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                            style: TextStyle(
+                              color: AppColors.muted,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 32),
@@ -317,11 +339,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: AppColors.brand.withValues(alpha: 0.04),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -339,8 +361,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             'Estado',
             (device['connected'] ?? false) ? 'Conectado' : 'Desconectado',
             valueColor: (device['connected'] ?? false)
-                ? Colors.green
-                : Colors.red,
+                ? AppColors.success
+                : AppColors.danger,
           ),
         ],
       ),
@@ -353,8 +375,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       children: [
         Text(
           label,
-          style: TextStyle(
-            color: Colors.grey.shade600,
+          style: const TextStyle(
+            color: AppColors.muted,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -374,11 +396,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: AppColors.brand.withValues(alpha: 0.04),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -394,7 +416,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 4),
           Text(
             subtitle,
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+            style: const TextStyle(color: AppColors.muted, fontSize: 13),
           ),
           const SizedBox(height: 16),
           child,
@@ -411,7 +433,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.bold,
-          color: Colors.grey.shade600,
+          color: AppColors.muted,
           letterSpacing: 1,
         ),
       ),

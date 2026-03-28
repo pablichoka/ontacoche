@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
 abstract final class AppTheme {
-  static ThemeData get light {
+  static ThemeData get dark {
     final ColorScheme colorScheme = ColorScheme.fromSeed(
       seedColor: AppColors.brand,
-      brightness: Brightness.light,
+      brightness: Brightness.dark,
       surface: AppColors.surface,
+      primary: AppColors.brand,
+      secondary: AppColors.secondary,
+      background: AppColors.background,
     );
 
     return ThemeData(
@@ -22,22 +25,17 @@ abstract final class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: AppColors.foreground,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        backgroundColor: AppColors.surfaceContainerLow,
+        contentTextStyle: const TextStyle(color: AppColors.foreground),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       textTheme: const TextTheme(
         titleMedium: TextStyle(
           color: AppColors.foreground,
           fontWeight: FontWeight.w700,
         ),
-        bodyMedium: TextStyle(
-          color: AppColors.foreground,
-        ),
-        bodySmall: TextStyle(
-          color: AppColors.muted,
-        ),
+        bodyMedium: TextStyle(color: AppColors.foreground),
+        bodySmall: TextStyle(color: AppColors.muted),
         labelMedium: TextStyle(
           color: AppColors.muted,
           fontWeight: FontWeight.w600,
