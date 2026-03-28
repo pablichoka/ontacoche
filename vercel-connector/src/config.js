@@ -46,7 +46,7 @@ function readConfig() {
     alertsCollection: process.env.ALERTS_COLLECTION || 'device_alerts',
     storeStateHistory: envAsBoolean(process.env.STORE_STATE_HISTORY, true),
     pushOnCommunicationActive: envAsBoolean(process.env.PUSH_ON_COMMUNICATION_ACTIVE, false),
-    // timezone used to format source_ts (ISO) — default Europe/Madrid
+    tripsCollection: process.env.TRIPS_COLLECTION || 'trips',
     timezone: process.env.TIMEZONE || 'Europe/Madrid',
   };
 }

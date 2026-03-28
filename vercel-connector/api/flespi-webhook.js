@@ -527,8 +527,28 @@ async function persistEvent({ firestore, config, event, classification }) {
   delete writeSnapshot.source_ts_ms;
   delete writeSnapshot.updated_at;
 
-    // overwrite last state document to ensure `device.id` nested shape
-    await stateRef.set(writeSnapshot);
+  // if payload didn't include a device.name, try to preserve an existing one
+  let existingStateDoc = null;
+  try {
+    existingStateDoc = await stateRef.get();
+  } catch (e) {
+    existingStateDoc = null;
+  }
+
+  if ((!writeSnapshot.device || writeSnapshot.device.name == null) && existingStateDoc && existingStateDoc.exists) {
+    try {
+      const existingData = existingStateDoc.data();
+      if (existingData && existingData.device && existingData.device.name) {
+        writeSnapshot.device = writeSnapshot.device || {};
+        writeSnapshot.device.name = existingData.device.name;
+      }
+    } catch (e) {
+      // ignore and continue
+    }
+  }
+
+  // overwrite last state document to ensure `device.id` nested shape
+  await stateRef.set(writeSnapshot, { merge: true });
 
     if (config.storeStateHistory) {
       await firestore.collection(config.stateHistoryCollection).add(writeSnapshot);
@@ -572,19 +592,17 @@ async function persistEvent({ firestore, config, event, classification }) {
         String(dedupeBucket),
       ].join('|'));
     const alertRef = firestore.collection(config.alertsCollection).doc(dedupeKey);
-    const existing = await alertRef.get();
 
     // Build a compact alert document to store only essential fields
-    // Build a compact alert document to store only essential fields
+    const resolvedDeviceName = (writeSnapshot.device && writeSnapshot.device.name) ? writeSnapshot.device.name : (snapshot.device?.name || null);
+
     const alertDocBase = {
       source_ts: snapshot.source_ts,
-      device: { id: String(event.deviceId), name: snapshot.device?.name || null },
+      device: { id: String(event.deviceId), name: resolvedDeviceName || null },
       dedupe_key: dedupeKey,
       event_id: event.eventId || null,
       event_kind: alertKind,
       severity: effectiveClassification.severity,
-      checked: existing.exists ? Boolean(existing.data()?.checked) : false,
-      checked_at: existing.exists ? (existing.data()?.checked_at || null) : null,
     };
 
     const alertDoc = effectiveClassification.vibrationAlarm
@@ -602,8 +620,26 @@ async function persistEvent({ firestore, config, event, classification }) {
         message: effectiveClassification.body || null,
       };
 
-    await alertRef.set(alertDoc, { merge: true });
-    // ensure forbidden fields are removed if they existed previously
+    // Use a transaction to avoid race conditions that can create duplicate alerts
+    const txResult = await firestore.runTransaction(async (tx) => {
+      const doc = await tx.get(alertRef);
+      const exists = doc.exists;
+      const checked = exists ? Boolean(doc.data()?.checked) : false;
+      const checked_at = exists ? (doc.data()?.checked_at || null) : null;
+
+      const toSet = {
+        ...alertDoc,
+        checked,
+        checked_at,
+        last_seen_at: new Date().toISOString(),
+        created_at: exists ? (doc.data()?.created_at || new Date().toISOString()) : new Date().toISOString(),
+      };
+
+      tx.set(alertRef, toSet, { merge: true });
+      return { created: !exists };
+    });
+
+    // remove forbidden legacy fields if present (best-effort)
     try {
       await alertRef.update({
         source_ts_ms: admin.firestore.FieldValue.delete(),
@@ -615,7 +651,7 @@ async function persistEvent({ firestore, config, event, classification }) {
     }
 
     return {
-      alertCreated: !existing.exists,
+      alertCreated: Boolean(txResult && txResult.created),
       dedupeKey,
       eventKind: alertKind,
       classification: effectiveClassification,
@@ -663,6 +699,79 @@ async function persistEvent({ firestore, config, event, classification }) {
     eventKind: null,
     classification: effectiveClassification,
   };
+}
+
+const TRIP_GAP_THRESHOLD_MS = 5 * 60 * 1000;
+
+async function processTripPoint({ firestore, config, deviceId, snapshot }) {
+  const lat = snapshot.position?.latitude;
+  const lng = snapshot.position?.longitude;
+  if (lat == null || lng == null) return;
+
+  const speed = snapshot.position?.speed ?? 0;
+  const pointTs = snapshot.source_ts_ms ?? Date.now();
+  const stateRef = firestore.collection(config.deviceStateCollection).doc(String(deviceId));
+
+  try {
+    const stateDoc = await stateRef.get();
+    const stateData = stateDoc.exists ? stateDoc.data() : {};
+    const currentTripId = stateData.currentTripId || null;
+    const lastPointTs = stateData.lastPointTimestamp || null;
+    const gap = lastPointTs != null ? pointTs - lastPointTs : Infinity;
+
+    const routePoint = { lat, lng, speed, timestamp: pointTs };
+
+    if (currentTripId && gap <= TRIP_GAP_THRESHOLD_MS) {
+      const tripRef = firestore.collection(config.tripsCollection).doc(currentTripId);
+      await tripRef.update({
+        routePoints: admin.firestore.FieldValue.arrayUnion(routePoint),
+        endTime: pointTs,
+      });
+      await stateRef.update({ lastPointTimestamp: pointTs });
+      return;
+    }
+
+    if (currentTripId && gap > TRIP_GAP_THRESHOLD_MS) {
+      try {
+        const oldTripRef = firestore.collection(config.tripsCollection).doc(currentTripId);
+        const oldTripDoc = await oldTripRef.get();
+        if (oldTripDoc.exists) {
+          const data = oldTripDoc.data();
+          const pts = data.routePoints || [];
+          let trailingStatic = 0;
+          for (let i = pts.length - 1; i >= 0 && trailingStatic < 5; i--) {
+            if ((pts[i].speed || 0) === 0) {
+              trailingStatic++;
+            } else {
+              break;
+            }
+          }
+          const activeEnd = pts.length - trailingStatic;
+          const startMs = data.startTime || (pts.length > 0 ? pts[0].timestamp : pointTs);
+          const endMs = activeEnd > 0 ? pts[activeEnd - 1].timestamp : startMs;
+          const activeDuration = Math.max(0, Math.round((endMs - startMs) / 60000));
+          await oldTripRef.update({ activeDurationMinutes: activeDuration });
+        }
+      } catch (e) {
+        writeLog('warn', 'failed to close previous trip', { deviceId, error: e.message });
+      }
+    }
+
+    const newTripRef = firestore.collection(config.tripsCollection).doc();
+    await newTripRef.set({
+      deviceIdent: String(deviceId),
+      startTime: pointTs,
+      endTime: pointTs,
+      activeDurationMinutes: null,
+      routePoints: [routePoint],
+    });
+    await stateRef.update({
+      currentTripId: newTripRef.id,
+      lastPointTimestamp: pointTs,
+    });
+  } catch (e) {
+    writeLog('error', 'trip processing failed', { deviceId, error: e.message });
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -730,6 +839,9 @@ module.exports = async function handler(req, res) {
           classification,
         });
         persisted += 1;
+
+        const tripSnapshot = buildStateSnapshot(event, classification, config);
+        await processTripPoint({ firestore, config, deviceId: event.deviceId, snapshot: tripSnapshot });
       }
 
       const effectiveClassification =
