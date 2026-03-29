@@ -548,14 +548,18 @@ async function persistEvent({ firestore, config, event, classification }) {
           .get();
 
         if (historyQuery.size === 6) {
-          const points = historyQuery.docs.map(doc => doc.data()).reverse();
+          const points = historyQuery.docs.map(doc => doc.data()).reverse(); // Orden cronologico
           const latestPoint = points[points.length - 1];
           const oldestPoint = points[0];
 
+          // Requisito 6 puntos en 5 mins
           const latestTs = new Date(latestPoint.source_ts).getTime();
           const oldestTs = new Date(oldestPoint.source_ts).getTime();
 
-          if (latestTs - oldestTs <= 300000) {
+          // CORRECCIÓN: Validar que existe movimiento real en estos 6 puntos
+          const hasMovement = points.some(p => (p.position?.speed || 0) >= 1);
+
+          if (latestTs - oldestTs <= 300000 && hasMovement) {
             await tripsColl.add({
               device_id: deviceIdStr,
               status: 'in_progress',
@@ -566,27 +570,32 @@ async function persistEvent({ firestore, config, event, classification }) {
           }
         }
       } else {
-        // Paso 2.3: Lógica si SÍ hay un Trip Activo
+        // Paso 2.3: Lógica si SÍ hay un Trip Activo (Actualización y Evaluación de Cierre)
         const tripDoc = activeTripQuery.docs[0];
         const tripData = tripDoc.data();
-        const updatedPoints = [...tripData.points, writeSnapshot];
+        const updatedPoints = [...(tripData.points || []), writeSnapshot];
 
+        // Evaluar condición de cierre (Parada detectada)
         if (updatedPoints.length >= 4) {
           const last4 = updatedPoints.slice(-4);
-          const isStopped = last4.every(p => (p.position.speed || 0) < 1);
+          const isStopped = last4.every(p => (p.position?.speed || 0) < 1);
 
           if (isStopped) {
             const finalPoints = updatedPoints.slice(0, -4);
-            const endTs = finalPoints.length > 0 
-              ? finalPoints[finalPoints.length - 1].source_ts 
-              : tripData.start_ts;
-
-            await tripDoc.ref.update({
-              status: 'completed',
-              end_ts: endTs,
-              points: finalPoints
-            });
+            
+            // CORRECCIÓN: Si el viaje resultante es demasiado corto o un falso positivo, borrarlo
+            if (finalPoints.length < 5) {
+              await tripDoc.ref.delete();
+            } else {
+              const endTs = finalPoints[finalPoints.length - 1].source_ts;
+              await tripDoc.ref.update({
+                status: 'completed',
+                end_ts: endTs,
+                points: finalPoints
+              });
+            }
           } else {
+            // Actualizar añadiendo el nuevo punto si no hay parada
             await tripDoc.ref.update({
               points: admin.firestore.FieldValue.arrayUnion(writeSnapshot)
             });
