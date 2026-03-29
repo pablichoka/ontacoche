@@ -968,19 +968,11 @@ module.exports = async function handler(req, res) {
 
   const normalizedEvents = rawEvents.map(normalizeEvent);
 
-  const deletionsByDevice = new Map();
+  const configChangesByDevice = new Set();
   for (const e of normalizedEvents) {
-    // Determine classification without persisting anything
     const cls = classifyEvent(e, config);
-    if (cls.isGeofenceDeletion && e.deviceId) {
-      if (!deletionsByDevice.has(e.deviceId)) {
-        deletionsByDevice.set(e.deviceId, new Set());
-      }
-      if (e.geofenceId) {
-        deletionsByDevice.get(e.deviceId).add(String(e.geofenceId));
-      } else {
-        deletionsByDevice.get(e.deviceId).add('any');
-      }
+    if ((cls.isGeofenceDeletion || cls.geofenceConfigChange) && e.deviceId) {
+      configChangesByDevice.add(String(e.deviceId));
     }
   }
 
@@ -1008,20 +1000,15 @@ module.exports = async function handler(req, res) {
 
       const classification = classifyEvent(event, config);
 
-      if (classification.geofenceExit && event.deviceId) {
-        const deviceDeletions = deletionsByDevice.get(event.deviceId);
-        if (deviceDeletions) {
-          if (deviceDeletions.has('any') || (event.geofenceId && deviceDeletions.has(String(event.geofenceId)))) {
-            classification.shouldPush = false;
-            classification.geofenceAlarm = false;
-            classification.geofenceConfigChange = false;
-            writeLog('info', 'suppressed phantom geofence exit alert due to deletion', {
-              deviceId: event.deviceId,
-              geofenceId: event.geofenceId,
-            });
-            skippedSuppressed += 1;
-          }
-        }
+      if (classification.geofenceExit && event.deviceId && configChangesByDevice.has(String(event.deviceId))) {
+        classification.shouldPush = false;
+        classification.geofenceAlarm = false;
+        classification.geofenceConfigChange = false;
+        writeLog('info', 'suppressed phantom geofence exit alert due to config change', {
+          deviceId: event.deviceId,
+          geofenceId: event.geofenceId,
+        });
+        skippedSuppressed += 1;
       }
 
       let persistenceResult = {
