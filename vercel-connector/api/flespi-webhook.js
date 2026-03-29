@@ -504,6 +504,34 @@ function buildStateSnapshot(event, classification, config) {
   return snapshot;
 }
 
+async function queryFlespiInterval(config, deviceSelector, geofenceName, begin) {
+  try {
+    if (!config.flespiToken || !config.flespiCalcId) return null;
+
+    const filterExpr = `geofence=="${geofenceName}" && begin==${begin}`;
+    const data = encodeURIComponent(JSON.stringify({ filter: filterExpr, count: 1, fields: 'id,begin,end,duration' }));
+
+    const devicePath = String(deviceSelector);
+    const url = `${config.flespiBaseUrl.replace(/\/$/, '')}/gw/calcs/${config.flespiCalcId}/devices/${devicePath}/intervals?data=${data}`;
+
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `FlespiToken ${config.flespiToken}`,
+        Accept: 'application/json',
+      },
+    });
+
+    if (!resp.ok) return null;
+    const body = await resp.json();
+    if (!body || !body.result || !Array.isArray(body.result) || body.result.length === 0) return null;
+    return body.result[0];
+  } catch (e) {
+    writeLog('error', 'flespi query failed', { error: e.message });
+    return null;
+  }
+}
+
 async function persistEvent({ firestore, config, event, classification }) {
   if (!event.deviceId) {
     return { alertCreated: false, dedupeKey: null };
@@ -623,6 +651,44 @@ async function persistEvent({ firestore, config, event, classification }) {
     const dedupeBucket = classification.vibrationAlarm
       ? Math.floor(snapshot.source_ts_ms / (VIBRATION_DEDUPE_WINDOW_SECONDS * 1000))
       : Math.floor(snapshot.source_ts_ms / (GEOFENCE_DEDUPE_WINDOW_SECONDS * 1000));
+
+    // FILTRADO ANTI-FANTASMA: consultar MCP (Flespi) para comparar duración previa
+    if (classification.geofenceAlarm) {
+      try {
+        const raw = event.raw || {};
+        // intentar obtener flespi device id numérico, si no usar selector por ident
+        const flespiDeviceId = firstDefined(raw, ['flespi_device_id', 'device.id', 'deviceId', 'device_id']);
+        const deviceSelector = (flespiDeviceId && String(flespiDeviceId).match(/^\d+$/))
+          ? String(flespiDeviceId)
+          : `configuration.ident=${encodeURIComponent(String(event.deviceId))}`;
+
+        const beginVal = firstDefined(raw, ['begin', 'payload.begin']) || firstDefined(raw, ['payload.begin']) || null;
+        const payloadDuration = Number(firstDefined(raw, ['duration', 'payload.duration']) || 0);
+
+        if (beginVal != null && payloadDuration != null && payloadDuration >= 0) {
+          const prev = await queryFlespiInterval(readConfig(), deviceSelector, classification.geofenceName || '', beginVal);
+          if (prev && typeof prev.duration === 'number') {
+            const prevDur = Number(prev.duration || 0);
+            // regla empírica observada: si prevDur >= 60s y nuevo duration <= 10s OR <= 5% del previo -> fantasma
+            if (prevDur >= 60 && (payloadDuration <= 10 || payloadDuration <= prevDur * 0.05)) {
+              writeLog('info', 'evento descartado como fantasma por verificacion MCP', {
+                device: event.deviceId,
+                geofence: classification.geofenceName,
+                payload_duration: payloadDuration,
+                prev_duration: prevDur,
+              });
+
+              return {
+                alertCreated: false,
+                dedupeKey: null,
+              };
+            }
+          }
+        }
+      } catch (e) {
+        writeLog('error', 'error al verificar evento en MCP', { error: e.message });
+      }
+    }
 
     const alertKind = classification.vibrationAlarm
       ? 'vibration_alert'

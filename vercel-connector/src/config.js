@@ -48,6 +48,9 @@ function readConfig() {
     pushOnCommunicationActive: envAsBoolean(process.env.PUSH_ON_COMMUNICATION_ACTIVE, false),
     tripsCollection: process.env.TRIPS_COLLECTION || 'trips',
     timezone: process.env.TIMEZONE || 'Europe/Madrid',
+    flespiToken: process.env.FLESPI_TOKEN || null,
+    flespiCalcId: process.env.FLESPI_GEOFENCE_CALC_ID || null,
+    flespiBaseUrl: process.env.FLESPI_BASE_URL || 'https://flespi.io',
   };
 }
 
