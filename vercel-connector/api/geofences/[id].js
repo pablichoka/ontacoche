@@ -8,6 +8,7 @@ const {
   updateGeofence,
   validateWriteAccess,
 } = require('../../src/geofenceCrudService');
+const { getFirestore } = require('../../src/firebaseAdmin');
 
 module.exports = async function handler(req, res) {
   let config;
@@ -29,12 +30,14 @@ module.exports = async function handler(req, res) {
   try {
     if (req.method === 'PATCH' || req.method === 'PUT') {
       const body = parseJsonBody(req);
-      const updated = await updateGeofence(config, geofenceId, body);
+      const firestore = getFirestore(config);
+      const updated = await updateGeofence(config, geofenceId, { ...body, firestore });
       return res.status(200).json({ ok: true, ...updated });
     }
 
     if (req.method === 'DELETE') {
-      const deleted = await deleteGeofence(config, geofenceId);
+      const firestore = getFirestore(config);
+      const deleted = await deleteGeofence(config, geofenceId, { ...req.query, ...req.body, firestore });
       return res.status(200).json({ ok: true, ...deleted });
     }
 

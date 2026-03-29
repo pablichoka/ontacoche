@@ -239,7 +239,7 @@ async function ensureCalcAssignment(config, geofenceId) {
   );
 }
 
-async function ensureDeviceAssignment(config, geofenceId, deviceSelector) {
+async function ensureDeviceAssignment(config, geofenceId, deviceSelector, firestore) {
   if (!deviceSelector) {
     return;
   }
@@ -249,6 +249,37 @@ async function ensureDeviceAssignment(config, geofenceId, deviceSelector) {
     'POST',
     `/gw/devices/${deviceSelector}/geofences/${geofenceId}`,
   );
+
+  if (firestore) {
+    await updateDeviceConfigChangeTs(firestore, config, deviceSelector);
+  }
+}
+
+async function updateDeviceConfigChangeTs(firestore, config, deviceSelector) {
+  try {
+    let deviceId = null;
+    if (deviceSelector.startsWith('configuration.ident=')) {
+      deviceId = deviceSelector.split('=')[1];
+    } else if (deviceSelector.match(/^\d+$/)) {
+      deviceId = deviceSelector;
+    }
+
+    if (!deviceId && config.defaultDeviceId) {
+      deviceId = config.defaultDeviceId;
+    }
+
+    if (deviceId) {
+      const stateRef = firestore.collection('device-state').doc(String(deviceId));
+      await stateRef.set({
+        last_geofence_config_change_ts: Date.now(),
+        updated_at: new Date().toISOString(),
+      }, { merge: true });
+      
+      console.log(`Recorded geofence config change for device: ${deviceId}`);
+    }
+  } catch (err) {
+    console.error('Failed to update device config change timestamp:', err.message);
+  }
 }
 
 async function listDeviceGeofences(config, deviceSelector) {
@@ -318,7 +349,7 @@ async function createCircleGeofence(config, input) {
 
   const geofenceId = Number(geofence.id);
   await ensureCalcAssignment(config, geofenceId);
-  await ensureDeviceAssignment(config, geofenceId, deviceSelector);
+  await ensureDeviceAssignment(config, geofenceId, deviceSelector, input.firestore);
 
   return {
     geofence,
@@ -378,7 +409,7 @@ async function createGeofence(config, input) {
 
   const geofenceId = Number(geofence.id);
   await ensureCalcAssignment(config, geofenceId);
-  await ensureDeviceAssignment(config, geofenceId, deviceSelector);
+  await ensureDeviceAssignment(config, geofenceId, deviceSelector, input.firestore);
 
   return {
     geofence,
@@ -420,6 +451,13 @@ async function updateCircleGeofence(config, geofenceId, input) {
   );
 
   await ensureCalcAssignment(config, id);
+
+  if (input.firestore) {
+    const deviceSelector = normalizeDeviceSelector(input, config);
+    if (deviceSelector) {
+      await updateDeviceConfigChangeTs(input.firestore, config, deviceSelector);
+    }
+  }
 
   const geofence = Array.isArray(updated.result) && updated.result.length > 0
     ? updated.result[0]
@@ -472,6 +510,13 @@ async function updateGeofence(config, geofenceId, input) {
 
   await ensureCalcAssignment(config, id);
 
+  if (input.firestore) {
+    const deviceSelector = normalizeDeviceSelector(input, config);
+    if (deviceSelector) {
+      await updateDeviceConfigChangeTs(input.firestore, config, deviceSelector);
+    }
+  }
+
   const geofence = Array.isArray(updated.result) && updated.result.length > 0
     ? updated.result[0]
     : null;
@@ -482,13 +527,21 @@ async function updateGeofence(config, geofenceId, input) {
   };
 }
 
-async function deleteGeofence(config, geofenceId) {
+async function deleteGeofence(config, geofenceId, input = {}) {
   const id = Number(geofenceId);
   if (!Number.isInteger(id) || id <= 0) {
     throw createValidationError('invalid geofence id');
   }
 
   await flespiRequest(config, 'DELETE', `/gw/geofences/${id}`);
+  
+  if (input.firestore) {
+    const deviceSelector = normalizeDeviceSelector(input, config);
+    if (deviceSelector) {
+      await updateDeviceConfigChangeTs(input.firestore, config, deviceSelector);
+    }
+  }
+
   return { id };
 }
 
@@ -504,7 +557,7 @@ async function assignGeofenceToDevice(config, geofenceId, input) {
   }
 
   await ensureCalcAssignment(config, id);
-  await ensureDeviceAssignment(config, id, deviceSelector);
+  await ensureDeviceAssignment(config, id, deviceSelector, input.firestore);
 
   return {
     geofence_id: id,

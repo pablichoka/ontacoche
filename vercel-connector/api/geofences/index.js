@@ -8,6 +8,7 @@ const {
   unauthorized,
   validateWriteAccess,
 } = require('../../src/geofenceCrudService');
+const { getFirestore } = require('../../src/firebaseAdmin');
 
 module.exports = async function handler(req, res) {
   let config;
@@ -36,7 +37,8 @@ module.exports = async function handler(req, res) {
 
     if (req.method === 'POST') {
       const body = parseJsonBody(req);
-      const created = await createGeofence(config, body);
+      const firestore = getFirestore(config);
+      const created = await createGeofence(config, { ...body, firestore });
       return res.status(201).json({ ok: true, ...created });
     }
 

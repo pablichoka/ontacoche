@@ -616,6 +616,26 @@ async function persistEvent({ firestore, config, event, classification }) {
         
       const tsDiffMs = writeSnapshot.source_ts_ms - (existingData.source_ts_ms || 0);
 
+      // Implement a persistent suppression window for geofence exits during configuration changes.
+      // This handles cases where Flespi plugin re-evaluations trigger phantom exits.
+      if (effectiveClassification.geofenceExit && existingData.last_geofence_config_change_ts) {
+        const configChangeMs = Number(existingData.last_geofence_config_change_ts);
+        const eventMs = Number(writeSnapshot.source_ts_ms);
+        const SUPPRESSION_WINDOW_MS = 30000; // 30 seconds
+
+        if (Math.abs(eventMs - configChangeMs) < SUPPRESSION_WINDOW_MS) {
+          effectiveClassification.geofenceAlarm = false;
+          effectiveClassification.shouldPush = false;
+          effectiveClassification.geofenceConfigChange = false;
+          writeLog('info', 'suppressed phantom geofence exit (persistent window)', {
+            deviceId: event.deviceId,
+            eventTs: new Date(eventMs).toISOString(),
+            configChangeTs: new Date(configChangeMs).toISOString(),
+          });
+          effectiveClassification.persistentlySuppressed = true;
+        }
+      }
+
       const isAlert = effectiveClassification.vibrationAlarm || effectiveClassification.geofenceAlarm || effectiveClassification.geofenceConfigChange;
 
       // When tracker is active, limit state writes to 1 per minute. Otherwise use 2 minutes
@@ -1025,6 +1045,10 @@ module.exports = async function handler(req, res) {
           event,
           classification,
         });
+
+        if (persistedRes.classification?.persistentlySuppressed) {
+          skippedSuppressed += 1;
+        }
 
         // Add to trip only if a state write actually happened AND coords are valid.
         if (!persistedRes.skippedStateWrite && tripSnapshot.position?.latitude != null && tripSnapshot.position?.longitude != null) {
