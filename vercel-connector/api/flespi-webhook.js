@@ -754,6 +754,33 @@ async function persistEvent({ firestore, config, event, classification }) {
                 }
               }
             }
+            // Descartar exits con 'end' muy dispar respecto al timestamp del evento (posible recálculo retroactivo)
+            try {
+              const eventTsSec = Math.floor(parseTimestampToMs(event.ts || firstDefined(raw, ['timestamp', 'server.timestamp'])) / 1000) || null;
+              const endSec = Number(endVal || 0) || null;
+              if (eventTsSec && endSec) {
+                const skew = Math.abs(eventTsSec - endSec);
+                // si el end está desfasado > 120s y la duración del payload es pequeña o inconsistente -> descartar
+                if (skew > 120 && (payloadDuration <= 5 || (prev && Number(prev.duration || 0) > 0 && payloadDuration <= Number(prev.duration || 0) * 0.01))) {
+                  writeLog('info', 'evento exit descartado por end desfasado respecto evento (posible recalc retroactivo)', {
+                    device: event.deviceId,
+                    geofence: classification.geofenceName,
+                    event_ts: eventTsSec,
+                    payload_end: endSec,
+                    skew_seconds: skew,
+                    payload_duration: payloadDuration,
+                    prev_duration: prev ? prev.duration : null,
+                  });
+
+                  return {
+                    alertCreated: false,
+                    dedupeKey: null,
+                  };
+                }
+              }
+            } catch (e) {
+              // no bloquear por error en este chequeo
+            }
           }
         }
       } catch (e) {
