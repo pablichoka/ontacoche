@@ -67,53 +67,62 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       return SliverPadding(
                         padding: const EdgeInsets.all(16),
                         sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (BuildContext context, int index) {
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: _TripCard(trip: trips[index]),
-                              );
-                            },
-                            childCount: trips.length,
-                          ),
+                          delegate: SliverChildBuilderDelegate((
+                            BuildContext context,
+                            int index,
+                          ) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _TripCard(trip: trips[index]),
+                            );
+                          }, childCount: trips.length),
                         ),
                       );
                     },
-                    loading: () => const SliverFillRemaining(
+                    loading: () => SliverFillRemaining(
                       hasScrollBody: false,
                       child: Center(
-                        child: ExpressiveIndicator(size: 40, strokeWidth: 5),
+                        child: ExpressiveIndicator(
+                          size: 40,
+                          strokeWidth: 10,
+                          color: AppColors.foreground,
+                        ),
                       ),
                     ),
                     error: (Object error, StackTrace stackTrace) =>
                         SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: <Widget>[
-                              const Icon(
-                                Icons.route_rounded,
-                                size: 48,
-                                color: Colors.grey,
+                          hasScrollBody: false,
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
                               ),
-                              const SizedBox(height: 12),
-                              Text(
-                                'No se pudo cargar los trayectos',
-                                style: Theme.of(context).textTheme.titleMedium,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: <Widget>[
+                                  const Icon(
+                                    Icons.route_rounded,
+                                    size: 48,
+                                    color: Colors.grey,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No se pudo cargar los trayectos',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  ElevatedButton(
+                                    onPressed: () =>
+                                        ref.invalidate(tripsProvider),
+                                    child: const Text('Reintentar'),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 16),
-                              ElevatedButton(
-                                onPressed: () => ref.invalidate(tripsProvider),
-                                child: const Text('Reintentar'),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                    ),
                   ),
                   const SliverToBoxAdapter(child: SizedBox(height: 32)),
                 ],
@@ -161,8 +170,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                           final service = ref.read(
                             vercelConnectorServiceProvider,
                           );
-                          final String deviceId =
-                              ref.read(deviceIdentProvider).trim();
+                          final String deviceId = ref
+                              .read(deviceIdentProvider)
+                              .trim();
                           final int deleted = await service
                               .deleteTripsForDevice(deviceId);
                           ref.invalidate(tripsProvider);
@@ -201,7 +211,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         ),
       ),
     );
-
   }
 }
 

@@ -211,6 +211,7 @@ class GeofenceEditorCard extends StatelessWidget {
                         width: 16,
                         height: 16,
                         child: ExpressiveIndicator(
+                          size: 12,
                           strokeWidth: 2,
                           color: AppColors.brand,
                         ),

@@ -170,7 +170,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             ),
                             const SizedBox(width: 8),
                             _isSaving
-                                ? const ExpressiveIndicator()
+                                ? const ExpressiveIndicator(                              
+                                )
                                 : IconButton.filled(
                                     onPressed: _saveDeviceName,
                                     icon: const Icon(Icons.save),
@@ -325,7 +326,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const Divider(height: 24),
           _buildInfoRow('Protocolo', device['protocol_name'] ?? '---'),
           const Divider(height: 24),
-          _buildInfoRow('Tipo', device['device_type_name'] ?? '---'),
+          _buildInfoRow('Modelo', device['device_type_name'] ?? '---'),
           const Divider(height: 24),
           _buildInfoRow(
             'Estado',

@@ -270,7 +270,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                           ? const ExpressiveIndicator(
                               color: AppColors.foreground,
                               strokeWidth: 3,
-                              size: 24,
+                              size: 20,
                             )
                           : const Icon(
                               Icons.delete_outline_rounded,

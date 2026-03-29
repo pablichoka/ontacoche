@@ -64,7 +64,7 @@ class GeofenceListTile extends StatelessWidget {
                     width: 40,
                     height: 40,
                     child: Center(
-                      child: ExpressiveIndicator(size: 18, strokeWidth: 2),
+                      child: ExpressiveIndicator(size: 20, strokeWidth: 3),
                     ),
                   )
                 : IconButton(

@@ -615,6 +615,47 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                               ),
                             ],
                           ),
+                        // numbered vertex markers for the draft polygon
+                        if (_draftPath.isNotEmpty)
+                          MarkerLayer(
+                            markers: _draftPath.asMap().entries.map((entry) {
+                              final int idx = entry.key;
+                              final LatLng p = entry.value;
+                              return Marker(
+                                point: p,
+                                width: 28,
+                                height: 28,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedVertexIndex = idx;
+                                      _isMovingVertex = true;
+                                    });
+                                  },
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: _selectedVertexIndex == idx
+                                          ? AppColors.brand
+                                          : Colors.orange,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: AppColors.surfaceContainerLow,
+                                      ),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      '${idx + 1}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(growable: false),
+                          ),
                         if (_draftCenter != null)
                           MarkerLayer(
                             markers: <Marker>[
@@ -677,7 +718,11 @@ class _GeofenceManagerScreenState extends ConsumerState<GeofenceManagerScreen> {
                       loading: () => const SliverToBoxAdapter(
                         child: Padding(
                           padding: EdgeInsets.only(top: 24),
-                          child: Center(child: ExpressiveIndicator()),
+                          child: Center(child: ExpressiveIndicator(
+                            size: 40,
+                            strokeWidth: 10,
+                            color: AppColors.foreground,
+                          )),
                         ),
                       ),
                       error: (Object error, StackTrace _) => SliverToBoxAdapter(
