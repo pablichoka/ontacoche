@@ -532,6 +532,38 @@ async function queryFlespiInterval(config, deviceSelector, geofenceName, begin) 
   }
 }
 
+async function queryFlespiIntervalsByBeginRange(config, deviceSelector, beginFrom, beginTo, typeFilter) {
+  try {
+    if (!config.flespiToken || !config.flespiCalcId) return null;
+
+    const filterParts = [];
+    if (typeFilter) filterParts.push(`type=="${typeFilter}"`);
+    if (beginFrom != null) filterParts.push(`begin>=${beginFrom}`);
+    if (beginTo != null) filterParts.push(`begin<=${beginTo}`);
+    const filterExpr = filterParts.join(' && ');
+    const data = encodeURIComponent(JSON.stringify({ filter: filterExpr, count: 5, fields: 'id,begin,end,duration,geofence,type' }));
+
+    const devicePath = String(deviceSelector);
+    const url = `${config.flespiBaseUrl.replace(/\/$/, '')}/gw/calcs/${config.flespiCalcId}/devices/${devicePath}/intervals?data=${data}`;
+
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `FlespiToken ${config.flespiToken}`,
+        Accept: 'application/json',
+      },
+    });
+
+    if (!resp.ok) return null;
+    const body = await resp.json();
+    if (!body || !body.result || !Array.isArray(body.result) || body.result.length === 0) return null;
+    return body.result;
+  } catch (e) {
+    writeLog('error', 'flespi range query failed', { error: e.message });
+    return null;
+  }
+}
+
 async function persistEvent({ firestore, config, event, classification }) {
   if (!event.deviceId) {
     return { alertCreated: false, dedupeKey: null };
@@ -546,15 +578,19 @@ async function persistEvent({ firestore, config, event, classification }) {
   delete writeSnapshot.source_ts_ms;
   delete writeSnapshot.updated_at;
 
-  // Actualizar ultimo estado conocido siempre
-  await stateRef.set(writeSnapshot);
-
   // TAREA 1: FILTRADO ESTRICTO DE HISTORIAL (Evitar tramas basura)
   const isPeriodicPos = event.reportCode === '0200';
   const hasValidGPS = snapshot.position.latitude != null && snapshot.position.longitude != null;
 
   if (config.storeStateHistory && isPeriodicPos && hasValidGPS) {
-    await firestore.collection(config.stateHistoryCollection).add(writeSnapshot);
+    // Ensure history and last-state are written together so `device_last_state`
+    // always matches the last entry in `device_state_history`.
+    const historyCol = firestore.collection(config.stateHistoryCollection);
+    const historyDocRef = historyCol.doc();
+    const batch = firestore.batch();
+    batch.set(historyDocRef, writeSnapshot);
+    batch.set(stateRef, writeSnapshot);
+    await batch.commit();
 
     // TAREA 2: MOTOR DE ESTADO DE TRIPS
     try {
@@ -642,8 +678,19 @@ async function persistEvent({ firestore, config, event, classification }) {
       // Continuamos para no bloquear alertas
     }
   } else if (config.storeStateHistory && (!isPeriodicPos || !hasValidGPS)) {
-    // Si no es valido para historial, abortamos evaluacion de trips pero permitimos alertas
-    // No hacemos nada aqui, solo evitamos el bloque anterior
+    // No actualizamos `device_last_state` si no estamos almacenando historial válido.
+    // Esto preserva la invariante: `device_last_state` == última entrada de `device_state_history`.
+    // Seguimos sin evaluar trips para tramas no periódicas o sin GPS válido.
+  }
+
+  // Si el sistema no almacena historial, mantenemos el comportamiento previo
+  // y actualizamos únicamente `device_last_state`.
+  if (!config.storeStateHistory) {
+    try {
+      await stateRef.set(writeSnapshot);
+    } catch (e) {
+      writeLog('error', 'failed to write device_last_state', { deviceId: deviceIdStr, error: e.message });
+    }
   }
 
   // LOGICA DE ALERTAS Y GEOCERCAS (Se mantiene intacta)
@@ -666,12 +713,13 @@ async function persistEvent({ firestore, config, event, classification }) {
         const payloadDuration = Number(firstDefined(raw, ['duration', 'payload.duration']) || 0);
 
         if (beginVal != null && payloadDuration != null && payloadDuration >= 0) {
-          const prev = await queryFlespiInterval(readConfig(), deviceSelector, classification.geofenceName || '', beginVal);
+          const cfg = readConfig();
+          const prev = await queryFlespiInterval(cfg, deviceSelector, classification.geofenceName || '', beginVal);
           if (prev && typeof prev.duration === 'number') {
             const prevDur = Number(prev.duration || 0);
-            // regla empírica observada: si prevDur >= 60s y nuevo duration <= 10s OR <= 5% del previo -> fantasma
-            if (prevDur >= 60 && (payloadDuration <= 10 || payloadDuration <= prevDur * 0.05)) {
-              writeLog('info', 'evento descartado como fantasma por verificacion MCP', {
+            // regla empírica observada: si prevDur >= 60s y nuevo duration <= 5s OR <= 1% del previo -> fantasma
+            if (prevDur >= 60 && (payloadDuration <= 5 || payloadDuration <= prevDur * 0.01)) {
+              writeLog('info', 'evento descartado como fantasma por verificacion MCP (duracion)', {
                 device: event.deviceId,
                 geofence: classification.geofenceName,
                 payload_duration: payloadDuration,
@@ -682,6 +730,29 @@ async function persistEvent({ firestore, config, event, classification }) {
                 alertCreated: false,
                 dedupeKey: null,
               };
+            }
+
+            // Priorizar ENTER: si existe un intervalo de tipo 'enter' cuyo begin esté cercano al end del exit
+            const endVal = firstDefined(raw, ['end', 'payload.end']) || null;
+            if (endVal != null) {
+              const window = 5; // seconds
+              const enterCandidates = await queryFlespiIntervalsByBeginRange(cfg, deviceSelector, Number(endVal) - window, Number(endVal) + window, 'enter');
+              if (Array.isArray(enterCandidates) && enterCandidates.length > 0) {
+                const longEnter = enterCandidates.find(i => Number(i.duration || 0) >= 60);
+                if (longEnter) {
+                  writeLog('info', 'evento exit descartado porque hay enter largo cercano (prioridad enter)', {
+                    device: event.deviceId,
+                    geofence_exit: classification.geofenceName,
+                    enter_geofence: longEnter.geofence || null,
+                    enter_duration: longEnter.duration,
+                  });
+
+                  return {
+                    alertCreated: false,
+                    dedupeKey: null,
+                  };
+                }
+              }
             }
           }
         }
