@@ -406,7 +406,7 @@ function classifyEvent(event, config) {
       topicActivated
     ));
 
-  let geofenceExit =
+  const geofenceExit =
     geofenceExitByField ||
     (!geofenceEnterByField && intervalType === 'exit') ||
     (!hasExplicitIntervalDirection && (
@@ -416,13 +416,6 @@ function classifyEvent(event, config) {
       eventDeactivated ||
       topicDeactivated
     ));
-
-  // [CAPA 3] Validación Física: un vehículo estático no puede salir de una geocerca.
-  // Si la velocidad es nula (o casi nula), anulamos el exit para evitar alertas fantasma
-  const speed = Number(firstDefined(raw, ['position.speed', 'speed'])) || 0;
-  if (geofenceExit && speed < 3) {
-    geofenceExit = false;
-  }
 
   const geofenceAlarm = geofenceAlarmFlag || geofenceEnter || geofenceExit;
 
@@ -477,8 +470,7 @@ function classifyEvent(event, config) {
 
 function buildStateSnapshot(event, classification, config) {
   const raw = event.raw || {};
-  // [CAPA 2] Prioridad correcta de Timestamps de Flespi
-  // Priorizamos 'end' (para salidas) y 'begin' (para entradas) antes que 'server.timestamp'
+  // Extraemos el end / begin nativo del intervalo para no usar la hora del recálculo de flespi
   const sourceTsMs =
     parseTimestampToMs(firstDefined(raw, ['end', 'begin', 'server.timestamp', 'timestamp'])) ||
     parseTimestampToMs(event.ts) ||
@@ -530,12 +522,10 @@ async function persistEvent({ firestore, config, event, classification }) {
   let effectiveClassification = classification;
 
   const snapshot = buildStateSnapshot(event, effectiveClassification, config);
-  // create a write-safe copy that strips internal timestamp fields
   const writeSnapshot = { ...snapshot };
   delete writeSnapshot.source_ts_ms;
   delete writeSnapshot.updated_at;
 
-    // overwrite last state document to ensure `device.id` nested shape
     await stateRef.set(writeSnapshot);
 
     if (config.storeStateHistory) {
@@ -568,7 +558,6 @@ async function persistEvent({ firestore, config, event, classification }) {
         geofenceIntervalId,
         alertKind,
         effectiveClassification.geofenceName || '',
-        // allows updated interval transitions to be persisted when end changes due to geofence resize/recalc
         geofenceTopic.includes('/updated') && geofenceIntervalEnd != null
           ? String(geofenceIntervalEnd)
           : '',
@@ -579,13 +568,15 @@ async function persistEvent({ firestore, config, event, classification }) {
         effectiveClassification.geofenceName || '',
         String(dedupeBucket),
       ].join('|'));
+      
     const alertRef = firestore.collection(config.alertsCollection).doc(dedupeKey);
     const existing = await alertRef.get();
 
-    // [CAPA 1] Bloqueo de reescritura en Firestore (Cortar el problema de raíz)
-    // Si la alerta ya existe con esta dedupeKey, no sobrescribimos nada. 
-    // Esto evita que Firebase actualice el documento y la app lo mueva al principio.
+    // BLOQUEO ABSOLUTO: Si esta alerta con este ID (dedupeKey) ya existe en Firestore, 
+    // abortamos. Así evitamos que un recálculo de Flespi ejecute un merge:true
+    // sobrescribiendo la fecha y empujándola a la app como nueva.
     if (existing.exists) {
+      writeLog('info', 'Ignorando alerta duplicada/recalculada', { dedupeKey, event_id: event.eventId });
       return {
         alertCreated: false,
         dedupeKey,
@@ -594,7 +585,6 @@ async function persistEvent({ firestore, config, event, classification }) {
       };
     }
 
-    // Build a compact alert document to store only essential fields
     const alertDocBase = {
       source_ts: snapshot.source_ts,
       device: { id: String(event.deviceId), name: snapshot.device?.name || null },
@@ -602,7 +592,7 @@ async function persistEvent({ firestore, config, event, classification }) {
       event_id: event.eventId || null,
       event_kind: alertKind,
       severity: effectiveClassification.severity,
-      checked: false, // como lo bloqueamos si existe, aquí siempre será nueva
+      checked: false, 
       checked_at: null,
     };
 
@@ -622,7 +612,7 @@ async function persistEvent({ firestore, config, event, classification }) {
       };
 
     await alertRef.set(alertDoc, { merge: true });
-    // ensure forbidden fields are removed if they existed previously
+    
     try {
       await alertRef.update({
         source_ts_ms: admin.firestore.FieldValue.delete(),
@@ -630,11 +620,10 @@ async function persistEvent({ firestore, config, event, classification }) {
         last_seen_at: admin.firestore.FieldValue.delete(),
       });
     } catch (e) {
-      // ignore if update fails (e.g., no-op)
     }
 
     return {
-      alertCreated: true, // Si pasamos el early return, siempre será true
+      alertCreated: true, 
       dedupeKey,
       eventKind: alertKind,
       classification: effectiveClassification,
