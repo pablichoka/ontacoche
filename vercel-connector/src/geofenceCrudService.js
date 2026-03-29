@@ -1,4 +1,5 @@
 const http = require('node:http');
+const { readConfig } = require('./config');
 
 function readCrudConfig() {
   const writeBearer = (process.env.APP_WRITE_BEARER || process.env.APP_READ_BEARER || '').trim();
@@ -22,11 +23,14 @@ function readCrudConfig() {
     throw new Error('FLESPI_GEOFENCE_CALC_ID must be a positive integer');
   }
 
+  const baseConfig = readConfig();
+
   return {
+    ...baseConfig,
     writeBearer,
     flespiToken,
     calcId,
-    defaultDeviceId: defaultDeviceId || null,
+    defaultDeviceId: defaultDeviceId || baseConfig.defaultDeviceId,
     baseUrl,
   };
 }
@@ -269,7 +273,8 @@ async function updateDeviceConfigChangeTs(firestore, config, deviceSelector) {
     }
 
     if (deviceId) {
-      const stateRef = firestore.collection('device-state').doc(String(deviceId));
+      const collectionName = config.deviceStateCollection || 'device-state';
+      const stateRef = firestore.collection(collectionName).doc(String(deviceId));
       await stateRef.set({
         last_geofence_config_change_ts: Date.now(),
         updated_at: new Date().toISOString(),
