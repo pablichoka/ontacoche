@@ -350,17 +350,15 @@ function classifyEvent(event, config) {
   const topic = String(firstDefined(raw, ['topic', 'event.topic']) || '').toLowerCase();
   const intervalType = String(firstDefined(raw, ['type', 'interval.type', 'geofence.event']) || '').toLowerCase();
   const messageText = String(firstDefined(raw, ['message', 'body']) || event.body || '').toLowerCase();
-  const geofenceRaw = firstDefined(raw, [
+  const geofenceSpecificRaw = firstDefined(raw, [
     'geofence',
     'geofence.name',
-    'plugin.geofence.name',
     'name',
   ]);
+  const geofencePluginName = firstDefined(raw, ['plugin.geofence.name']);
+
   const explicitEnterGeofence = firstDefined(raw, ['enter_geofence', 'payload.enter_geofence']);
   const explicitExitGeofence = firstDefined(raw, ['exit_geofence', 'payload.exit_geofence']);
-  const geofenceName = geofenceRaw && typeof geofenceRaw === 'object'
-    ? (firstDefined(geofenceRaw, ['name', 'title', 'id']) || null)
-    : geofenceRaw;
 
   const topicActivated = topic.includes('/activated') && !topic.includes('/deactivated');
   const eventActivated = eventType.includes('activated') && !eventType.includes('deactivated');
@@ -372,8 +370,10 @@ function classifyEvent(event, config) {
     'geofence.alarm',
     'plugin.geofence.alarm',
   ]));
+
   const geofenceSignal =
-    geofenceRaw != null ||
+    geofenceSpecificRaw != null ||
+    geofencePluginName != null ||
     geofenceStatusValue != null ||
     topic.includes('geofence') ||
     eventType.includes('geofence') ||
@@ -425,6 +425,18 @@ function classifyEvent(event, config) {
       ))
     );
 
+  let geofenceName = geofenceSpecificRaw && typeof geofenceSpecificRaw === 'object'
+    ? (firstDefined(geofenceSpecificRaw, ['name', 'title', 'id']) || null)
+    : geofenceSpecificRaw;
+
+  if (!geofenceName && geofencePluginName) {
+    // Only use plugin name as fallback if we are ENTERING.
+    // For EXITS, the plugin name usually points to the REMAINING geofence, not the exited one.
+    if (!geofenceExit) {
+      geofenceName = geofencePluginName;
+    }
+  }
+
   const geofenceAlarm = (geofenceAlarmFlag || geofenceEnter || geofenceExit) && !isGeofenceDeletion;
 
   const communicationActive = event.reportCode === '0200';
@@ -468,6 +480,7 @@ function classifyEvent(event, config) {
     geofenceExit,
     geofenceName: geofenceName ? String(geofenceName) : null,
     geofenceConfigChange,
+    isGeofenceDeletion,
     communicationActive,
     shouldPush: shouldPush || geofenceConfigChange,
     title,
@@ -949,7 +962,25 @@ module.exports = async function handler(req, res) {
     return [...finalEventsList, ...byDevice.values()];
   }
 
-  const events = consolidateEvents(rawEvents.map(normalizeEvent));
+  const normalizedEvents = rawEvents.map(normalizeEvent);
+
+  const deletionsByDevice = new Map();
+  for (const e of normalizedEvents) {
+    // Determine classification without persisting anything
+    const cls = classifyEvent(e, config);
+    if (cls.isGeofenceDeletion && e.deviceId) {
+      if (!deletionsByDevice.has(e.deviceId)) {
+        deletionsByDevice.set(e.deviceId, new Set());
+      }
+      if (e.geofenceId) {
+        deletionsByDevice.get(e.deviceId).add(String(e.geofenceId));
+      } else {
+        deletionsByDevice.get(e.deviceId).add('any');
+      }
+    }
+  }
+
+  const events = consolidateEvents(normalizedEvents);
 
   try {
     const firestore = getFirestore(config);
@@ -964,6 +995,7 @@ module.exports = async function handler(req, res) {
     let skippedNoTokens = 0;
     let skippedNonAlert = 0;
     let skippedDuplicatedAlert = 0;
+    let skippedSuppressed = 0;
 
     for (const event of events) {
       if (!event.deviceId && config.defaultDeviceId) {
@@ -971,6 +1003,21 @@ module.exports = async function handler(req, res) {
       }
 
       const classification = classifyEvent(event, config);
+
+      if (classification.geofenceExit && event.deviceId) {
+        const deviceDeletions = deletionsByDevice.get(event.deviceId);
+        if (deviceDeletions) {
+          if (deviceDeletions.has('any') || (event.geofenceId && deviceDeletions.has(String(event.geofenceId)))) {
+            classification.shouldPush = false;
+            classification.geofenceAlarm = false;
+            writeLog('info', 'suppressed phantom geofence exit alert due to deletion', {
+              deviceId: event.deviceId,
+              geofenceId: event.geofenceId,
+            });
+            skippedSuppressed += 1;
+          }
+        }
+      }
 
       let persistenceResult = {
         alertCreated: false,
@@ -1061,6 +1108,7 @@ module.exports = async function handler(req, res) {
       skipped_non_alert: skippedNonAlert,
       skipped_duplicated_alert: skippedDuplicatedAlert,
       skipped_no_tokens: skippedNoTokens,
+      skipped_suppressed: skippedSuppressed,
       sent,
       failed,
       deactivated_tokens: deactivatedTotal,
@@ -1075,6 +1123,7 @@ module.exports = async function handler(req, res) {
       skipped_non_alert: skippedNonAlert,
       skipped_duplicated_alert: skippedDuplicatedAlert,
       skipped_no_tokens: skippedNoTokens,
+      skipped_suppressed: skippedSuppressed,
       sent,
       failed,
       deactivated: deactivatedTotal,
