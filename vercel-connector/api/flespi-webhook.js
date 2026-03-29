@@ -379,13 +379,19 @@ function classifyEvent(event, config) {
     eventType.includes('geofence') ||
     intervalType.includes('geofence');
 
+  const isGeofenceDeletion =
+    eventType.includes('geofence_deleted') ||
+    eventType.includes('geofence_delete') ||
+    topic.includes('/deleted') ||
+    String(event.logCode) === '0003' || String(event.logCode) === '3';
+
   const geofenceConfigChange =
-    eventType.includes('geofence_update') ||
+    (eventType.includes('geofence_update') ||
     event.logCode === '0002' ||
     event.logCode === '2' ||
     event.geofenceId != null ||
     topic.includes('/geofences/') ||
-    topic.includes('flespi/log/gw/geofences');
+    topic.includes('flespi/log/gw/geofences')) && !isGeofenceDeletion;
 
   const hasExplicitIntervalDirection =
     intervalType === 'enter' || intervalType === 'exit';
@@ -394,28 +400,32 @@ function classifyEvent(event, config) {
   const geofenceExitByField = explicitExitGeofence != null && explicitExitGeofence !== 'null';
 
   const geofenceEnter =
-    geofenceEnterByField ||
-    (!geofenceExitByField && intervalType === 'enter') ||
-    (!hasExplicitIntervalDirection && (
-      intervalType === 'activated' ||
-      eventType.includes('geofence_enter') ||
-      (geofenceSignal && (messageText.includes('entrada') || messageText.includes(' enter'))) ||
-      eventActivated ||
-      topicActivated
-    ));
+    !isGeofenceDeletion && (
+      geofenceEnterByField ||
+      (!geofenceExitByField && intervalType === 'enter') ||
+      (!hasExplicitIntervalDirection && (
+        intervalType === 'activated' ||
+        eventType.includes('geofence_enter') ||
+        (geofenceSignal && (messageText.includes('entrada') || messageText.includes(' enter'))) ||
+        eventActivated ||
+        topicActivated
+      ))
+    );
 
   const geofenceExit =
-    geofenceExitByField ||
-    (!geofenceEnterByField && intervalType === 'exit') ||
-    (!hasExplicitIntervalDirection && (
-      intervalType === 'deactivated' ||
-      eventType.includes('geofence_exit') ||
-      (geofenceSignal && (messageText.includes('salida') || messageText.includes(' exit'))) ||
-      eventDeactivated ||
-      topicDeactivated
-    ));
+    !isGeofenceDeletion && (
+      geofenceExitByField ||
+      (!geofenceEnterByField && intervalType === 'exit') ||
+      (!hasExplicitIntervalDirection && (
+        intervalType === 'deactivated' ||
+        eventType.includes('geofence_exit') ||
+        (geofenceSignal && (messageText.includes('salida') || messageText.includes(' exit'))) ||
+        eventDeactivated ||
+        topicDeactivated
+      ))
+    );
 
-  const geofenceAlarm = geofenceAlarmFlag || geofenceEnter || geofenceExit;
+  const geofenceAlarm = (geofenceAlarmFlag || geofenceEnter || geofenceExit) && !isGeofenceDeletion;
 
   const communicationActive = event.reportCode === '0200';
   const shouldPush =
@@ -904,12 +914,18 @@ module.exports = async function handler(req, res) {
 
   function consolidateEvents(eventsList) {
     const byDevice = new Map();
-    const nonDeviceEvents = [];
+    const finalEventsList = [];
 
     for (const event of eventsList) {
       const key = event.deviceId || event.userId;
-      if (!key) {
-        nonDeviceEvents.push(event);
+      
+      // If it's not a device event, or it's a potentially significant alarm/geofence event,
+      // keep it separate to avoid data loss during merge.
+      const raw = event.raw || {};
+      const isRoutine = String(event.reportCode || '') === '0200' && !event.geofenceId && !raw.alarm && !raw['vibration.alarm'];
+
+      if (!key || !isRoutine) {
+        finalEventsList.push(event);
         continue;
       }
 
@@ -917,6 +933,7 @@ module.exports = async function handler(req, res) {
         byDevice.set(key, { ...event });
       } else {
         const existing = byDevice.get(key);
+        // Consolidate routine 0200 updates by merging raw data and keeping latest timestamp
         existing.raw = { ...existing.raw, ...event.raw };
         
         const newTs = parseTimestampToMs(event.ts);
@@ -926,20 +943,10 @@ module.exports = async function handler(req, res) {
         } else if (newTs && !oldTs) {
           existing.ts = event.ts;
         }
-        
-        if (event.eventId && !existing.eventId) existing.eventId = event.eventId;
-        if (event.reportCode) existing.reportCode = event.reportCode;
-        if (event.logCode) existing.logCode = event.logCode;
-        if (event.geofenceId) existing.geofenceId = event.geofenceId;
-        
-        if (event.eventType && event.eventType !== 'flespi_event') existing.eventType = event.eventType;
-        if (event.title && event.title !== 'Alerta OntaCoche') existing.title = event.title;
-        if (event.body && event.body !== 'Se detecto una alerta en el tracker') existing.body = event.body;
-        if (event.severity && event.severity !== 'info') existing.severity = event.severity;
       }
     }
 
-    return [...byDevice.values(), ...nonDeviceEvents];
+    return [...finalEventsList, ...byDevice.values()];
   }
 
   const events = consolidateEvents(rawEvents.map(normalizeEvent));

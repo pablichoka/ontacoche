@@ -109,7 +109,7 @@ async function computeNextPriority(config) {
   const result = Array.isArray(response.result) ? response.result : [];
   const priorities = result
     .map((r) => Number(r.priority))
-    .filter((n) => Number.isFinite(n) && Number.isInteger(n) && n >= 0);
+    .filter((n) => Number.isFinite(n) && Number.isInteger(n) && n >= 0 && n < 100);
   const max = priorities.length > 0 ? Math.max(...priorities) : -1;
   const next = max + 1;
   // priorities assigned by system must be 0..99; 100 reserved for parking
@@ -286,7 +286,9 @@ async function createCircleGeofence(config, input) {
     throw createValidationError('name is required');
   }
   let priority;
-  if (input.priority != null) {
+  if (name.startsWith('parking-')) {
+    priority = 100;
+  } else if (input.priority != null) {
     priority = normalizePriority(input.priority);
     await ensureUniquePriority(config, priority);
   } else {
@@ -347,7 +349,9 @@ async function createGeofence(config, input) {
   const deviceSelector = normalizeDeviceSelector(input, config);
 
   let priority;
-  if (input.priority != null) {
+  if (name.startsWith('parking-')) {
+    priority = 100;
+  } else if (input.priority != null) {
     priority = normalizePriority(input.priority);
     await ensureUniquePriority(config, priority);
   } else {
