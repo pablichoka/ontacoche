@@ -385,13 +385,17 @@ function classifyEvent(event, config) {
     topic.includes('/deleted') ||
     String(event.logCode) === '0003' || String(event.logCode) === '3';
 
+  const isIntervalEvent = eventType.includes('interval');
+
   const geofenceConfigChange =
-    (eventType.includes('geofence_update') ||
-    event.logCode === '0002' ||
-    event.logCode === '2' ||
-    event.geofenceId != null ||
-    topic.includes('/geofences/') ||
-    topic.includes('flespi/log/gw/geofences')) && !isGeofenceDeletion;
+    !isGeofenceDeletion && !isIntervalEvent && (
+      eventType.includes('geofence_update') ||
+      event.logCode === '0002' ||
+      event.logCode === '2' ||
+      event.geofenceId != null ||
+      topic.includes('/geofences/') ||
+      topic.includes('flespi/log/gw/geofences')
+    );
 
   const hasExplicitIntervalDirection =
     intervalType === 'enter' || intervalType === 'exit';
@@ -1010,6 +1014,7 @@ module.exports = async function handler(req, res) {
           if (deviceDeletions.has('any') || (event.geofenceId && deviceDeletions.has(String(event.geofenceId)))) {
             classification.shouldPush = false;
             classification.geofenceAlarm = false;
+            classification.geofenceConfigChange = false;
             writeLog('info', 'suppressed phantom geofence exit alert due to deletion', {
               deviceId: event.deviceId,
               geofenceId: event.geofenceId,
