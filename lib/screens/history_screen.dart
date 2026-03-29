@@ -23,149 +23,185 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   Widget build(BuildContext context) {
     final AsyncValue<List<Trip>> tripsState = ref.watch(tripsProvider);
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text(
-          'Historial',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-      ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: tripsState.when(
-              data: (List<Trip> trips) {
-                if (trips.isEmpty) {
-                  return const _EmptyTripsState();
-                }
-
-                return RefreshIndicator(
-                  onRefresh: () async => ref.invalidate(tripsProvider),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 200),
-                    itemCount: trips.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _TripCard(trip: trips[index]),
-                      );
-                    },
-                  ),
-                );
-              },
-              loading: () => const Center(
-                child: ExpressiveIndicator(size: 40, strokeWidth: 5),
-              ),
-              error: (Object error, StackTrace stackTrace) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      const Icon(
-                        Icons.route_rounded,
-                        size: 48,
-                        color: Colors.grey,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'No se pudo cargar los trayectos',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => ref.invalidate(tripsProvider),
-                        child: const Text('Reintentar'),
-                      ),
-                    ],
-                  ),
+    return ColoredBox(
+      color: AppColors.background,
+      child: SafeArea(
+        bottom: false,
+        child: Stack(
+          children: [
+            RefreshIndicator(
+              onRefresh: () async => ref.invalidate(tripsProvider),
+              color: AppColors.brand,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
                 ),
-              ),
-            ),
-          ),
+                slivers: <Widget>[
+                  SliverToBoxAdapter(
+                    child: Container(
+                      color: AppColors.surface,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      child: const Text(
+                        'Historial',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 20,
+                          color: AppColors.foreground,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  tripsState.when(
+                    data: (List<Trip> trips) {
+                      if (trips.isEmpty) {
+                        return const SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: _EmptyTripsState(),
+                        );
+                      }
 
-          Positioned(
-            right: 16,
-            bottom: 150,
-            child: FloatingActionButton(
-              shape: const CircleBorder(),
-              clipBehavior: Clip.hardEdge,
-              backgroundColor: Colors.redAccent,
-              onPressed: _isDeleting
-                  ? null
-                  : () async {
-                      final bool? confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Borrar trayectos'),
-                          content: const Text(
-                            '¿Eliminar todos los trayectos del servidor? Esta acción es irreversible.',
+                      return SliverPadding(
+                        padding: const EdgeInsets.all(16),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (BuildContext context, int index) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: _TripCard(trip: trips[index]),
+                              );
+                            },
+                            childCount: trips.length,
                           ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(false),
-                              child: const Text('Cancelar'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(true),
-                              child: const Text('Eliminar'),
-                            ),
-                          ],
                         ),
                       );
-
-                      if (confirmed != true) return;
-                      if (!context.mounted) return;
-
-                      FocusScope.of(context).unfocus();
-                      setState(() => _isDeleting = true);
-
-                      try {
-                        final service = ref.read(
-                          vercelConnectorServiceProvider,
-                        );
-                        final String deviceId = ref
-                            .read(deviceIdentProvider)
-                            .trim();
-                        final int deleted = await service.deleteTripsForDevice(
-                          deviceId,
-                        );
-                        ref.invalidate(tripsProvider);
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Eliminados $deleted trayectos'),
+                    },
+                    loading: () => const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: ExpressiveIndicator(size: 40, strokeWidth: 5),
+                      ),
+                    ),
+                    error: (Object error, StackTrace stackTrace) =>
+                        SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: <Widget>[
+                              const Icon(
+                                Icons.route_rounded,
+                                size: 48,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'No se pudo cargar los trayectos',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton(
+                                onPressed: () => ref.invalidate(tripsProvider),
+                                child: const Text('Reintentar'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 32)),
+                ],
+              ),
+            ),
+            Positioned(
+              right: 16,
+              bottom: 150,
+              child: FloatingActionButton(
+                shape: const CircleBorder(),
+                clipBehavior: Clip.hardEdge,
+                backgroundColor: Colors.redAccent,
+                onPressed: _isDeleting
+                    ? null
+                    : () async {
+                        final bool? confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Borrar trayectos'),
+                            content: const Text(
+                              '¿Eliminar todos los trayectos del servidor? Esta acción es irreversible.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(context).pop(false),
+                                child: const Text('Cancelar'),
+                              ),
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(context).pop(true),
+                                child: const Text('Eliminar'),
+                              ),
+                            ],
                           ),
                         );
-                      } catch (e) {
+
+                        if (confirmed != true) return;
                         if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error al eliminar: $e')),
-                        );
-                      } finally {
-                        if (mounted) setState(() => _isDeleting = false);
-                      }
-                    },
-              child: _isDeleting
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: ExpressiveIndicator(
-                        strokeWidth: 2.2,
-                        color: Colors.white,
+
+                        FocusScope.of(context).unfocus();
+                        setState(() => _isDeleting = true);
+
+                        try {
+                          final service = ref.read(
+                            vercelConnectorServiceProvider,
+                          );
+                          final String deviceId =
+                              ref.read(deviceIdentProvider).trim();
+                          final int deleted = await service
+                              .deleteTripsForDevice(deviceId);
+                          ref.invalidate(tripsProvider);
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Eliminados $deleted trayectos'),
+                            ),
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Error al eliminar: $e')),
+                          );
+                        } finally {
+                          if (mounted) setState(() => _isDeleting = false);
+                        }
+                      },
+                child: _isDeleting
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: ExpressiveIndicator(
+                          strokeWidth: 2.2,
+                          color: AppColors.foreground,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.delete_rounded,
+                        color: AppColors.foreground,
+                        size: 24,
                       ),
-                    )
-                  : const Icon(
-                      Icons.delete_rounded,
-                      color: Colors.white,
-                      size: 24,
-                    ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
+
   }
 }
 
@@ -199,9 +235,8 @@ class _TripCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(24),
           boxShadow: <BoxShadow>[
             BoxShadow(
-              color: AppColors.brand.withValues(alpha: 0.04),
+              color: AppColors.secondary.withValues(alpha: 0.04),
               blurRadius: 24,
-              offset: const Offset(0, 8),
             ),
           ],
         ),

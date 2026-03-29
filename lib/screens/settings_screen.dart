@@ -113,198 +113,192 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final deviceState = ref.watch(deviceDetailsProvider);
     final settingsAsync = ref.watch(settingsRepositoryProvider);
-    final double kbHeight = MediaQuery.of(context).viewInsets.bottom;
+    final MediaQueryData media = MediaQuery.of(context);
+    final bool keyboardOpen = media.viewInsets.bottom > 0;
 
     return ColoredBox(
       color: AppColors.background,
       child: SafeArea(
         bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              color: AppColors.surface,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: const Text(
-                'Ajustes',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 20,
-                  color: Colors.white,
-                  letterSpacing: -0.5,
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Container(
+                color: AppColors.surface,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: const Text(
+                  'Ajustes',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 20,
+                    color: AppColors.foreground,
+                    letterSpacing: -0.5,
+                  ),
                 ),
               ),
             ),
-            Expanded(
-              child: deviceState.when(
-                data: (device) {
-                  if (!_isNameInitialized && !_isSaving) {
-                    _nameController.text = device['name'] ?? '';
-                    _isNameInitialized = true;
-                  }
+            deviceState.when(
+              data: (device) {
+                if (!_isNameInitialized && !_isSaving) {
+                  _nameController.text = device['name'] ?? '';
+                  _isNameInitialized = true;
+                }
 
-                  return SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(16, 16, 16, kbHeight + 200),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildSectionTitle('Información del Dispositivo'),
-                        _buildDeviceCard(device),
-                        const SizedBox(height: 24),
-                        _buildSectionTitle('Configuración'),
-                        _buildSettingItem(
-                          title: 'Nombre del Tracker',
-                          subtitle: 'Personaliza cómo aparece el dispositivo',
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: AppTextField(
-                                  controller: _nameController,
-                                  focusNode: _nameFocusNode,
-                                  hintText: 'Ej: Mi Coche',
-                                ),
+                return SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      _buildSectionTitle('Información del Dispositivo'),
+                      _buildDeviceCard(device),
+                      const SizedBox(height: 24),
+                      _buildSectionTitle('Configuración'),
+                      _buildSettingItem(
+                        title: 'Nombre del Tracker',
+                        subtitle: 'Personaliza cómo aparece el dispositivo',
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: AppTextField(
+                                controller: _nameController,
+                                focusNode: _nameFocusNode,
+                                hintText: 'Ej: Mi Coche',
                               ),
-                              const SizedBox(width: 8),
-                              _isSaving
-                                  ? const ExpressiveIndicator()
-                                  : IconButton.filled(
-                                      onPressed: _saveDeviceName,
-                                      icon: const Icon(Icons.save),
-                                      style: IconButton.styleFrom(
-                                        backgroundColor: AppColors.brand,
-                                        foregroundColor: AppColors.surface,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            50,
-                                          ),
-                                        ),
+                            ),
+                            const SizedBox(width: 8),
+                            _isSaving
+                                ? const ExpressiveIndicator()
+                                : IconButton.filled(
+                                    onPressed: _saveDeviceName,
+                                    icon: const Icon(Icons.save),
+                                    style: IconButton.styleFrom(
+                                      backgroundColor: AppColors.brand,
+                                      foregroundColor: AppColors.surface,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(50),
                                       ),
                                     ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildSectionTitle('Preferencias de parking'),
-                        settingsAsync.when(
-                          data: (settings) {
-                            if (_parkingController.text.isEmpty && !_isSaving) {
-                              _parkingController.text = settings
-                                  .parkingRadiusMeters
-                                  .toStringAsFixed(0);
-                            }
-                            return _buildSettingItem(
-                              title: 'Radio parking (m)',
-                              subtitle:
-                                  'Radio por defecto para geovallas tipo parking',
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: AppTextField(
-                                      controller: _parkingController,
-                                      focusNode: _parkingFocusNode,
-                                      hintText: '100',
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                            decimal: false,
-                                          ),
-                                    ),
                                   ),
-                                  const SizedBox(width: 8),
-                                  IconButton(
-                                    onPressed: () async {
-                                      final String raw = _parkingController.text
-                                          .trim();
-                                      final double? meters = double.tryParse(
-                                        raw,
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildSectionTitle('Preferencias de parking'),
+                      settingsAsync.when(
+                        data: (settings) {
+                          if (_parkingController.text.isEmpty && !_isSaving) {
+                            _parkingController.text = settings
+                                .parkingRadiusMeters
+                                .toStringAsFixed(0);
+                          }
+                          return _buildSettingItem(
+                            title: 'Radio parking (m)',
+                            subtitle:
+                                'Radio por defecto para geovallas tipo parking',
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: AppTextField(
+                                    controller: _parkingController,
+                                    focusNode: _parkingFocusNode,
+                                    hintText: '100',
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: false,
+                                        ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  onPressed: () async {
+                                    final String raw = _parkingController.text
+                                        .trim();
+                                    final double? meters = double.tryParse(raw);
+                                    if (meters == null || meters <= 0) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Introduce un número válido.',
+                                          ),
+                                        ),
                                       );
-                                      if (meters == null || meters <= 0) {
+                                      return;
+                                    }
+                                    try {
+                                      await settings.setParkingDiameterMeters(
+                                        meters,
+                                      );
+                                      ref.invalidate(
+                                        settingsRepositoryProvider,
+                                      );
+                                      if (context.mounted) {
+                                        FocusScope.of(context).unfocus();
+                                      }
+                                      if (context.mounted) {
                                         ScaffoldMessenger.of(
                                           context,
                                         ).showSnackBar(
                                           const SnackBar(
                                             content: Text(
-                                              'Introduce un número válido.',
+                                              'Preferencia guardada.',
                                             ),
                                           ),
                                         );
-                                        return;
                                       }
-                                      try {
-                                        await settings.setParkingDiameterMeters(
-                                          meters,
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(content: Text('Error: $e')),
                                         );
-                                        ref.invalidate(
-                                          settingsRepositoryProvider,
-                                        );
-                                        if (context.mounted) {
-                                          FocusScope.of(context).unfocus();
-                                        }
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                'Preferencia guardada.',
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      } catch (e) {
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text('Error: $e'),
-                                            ),
-                                          );
-                                        }
                                       }
-                                    },
-                                    icon: const Icon(Icons.save_rounded),
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: AppColors.brand,
-                                      foregroundColor: AppColors.surface,
-                                    ),
+                                    }
+                                  },
+                                  icon: const Icon(Icons.save_rounded),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: AppColors.brand,
+                                    foregroundColor: AppColors.surface,
                                   ),
-                                ],
-                              ),
-                            );
-                          },
-                          loading: () => _buildSettingItem(
-                            title: 'Diámetro parking (m)',
-                            subtitle: 'Cargando…',
-                            child: const SizedBox(
-                              height: 48,
-                              child: Center(child: ExpressiveIndicator()),
+                                ),
+                              ],
                             ),
-                          ),
-                          error: (e, s) => _buildSettingItem(
-                            title: 'Diámetro parking (m)',
-                            subtitle: 'Error cargando preferencias',
-                            child: Text('Error: $e'),
+                          );
+                        },
+                        loading: () => _buildSettingItem(
+                          title: 'Diámetro parking (m)',
+                          subtitle: 'Cargando…',
+                          child: const SizedBox(
+                            height: 48,
+                            child: Center(child: ExpressiveIndicator()),
                           ),
                         ),
-                        const SizedBox(height: 32),
-                        const Center(
-                          child: Text(
-                            'Ontacoche v1.2.0',
-                            style: TextStyle(
-                              color: AppColors.muted,
-                              fontSize: 12,
-                            ),
-                          ),
+                        error: (e, s) => _buildSettingItem(
+                          title: 'Diámetro parking (m)',
+                          subtitle: 'Error cargando preferencias',
+                          child: Text('Error: $e'),
                         ),
-                        const SizedBox(height: 32),
-                      ],
-                    ),
-                  );
-                },
-                loading: () => const Center(child: ExpressiveIndicator()),
-                error: (err, stack) => Center(child: Text('Error: $err')),
+                      ),
+                    ]),
+                  ),
+                );
+              },
+              loading: () => const SliverFillRemaining(
+                child: Center(child: ExpressiveIndicator()),
+              ),
+              error: (err, stack) => SliverFillRemaining(
+                child: Center(child: Text('Error: $err')),
               ),
             ),
+            if (keyboardOpen)
+              SliverToBoxAdapter(
+                child: SizedBox(height: media.viewInsets.bottom),
+              ),
           ],
         ),
       ),

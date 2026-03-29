@@ -31,10 +31,17 @@ class AppTextField extends StatelessWidget {
         hintText: hintText,
         hintStyle: const TextStyle(color: AppColors.muted),
         filled: true,
-        fillColor: AppColors.surface,
+        fillColor: AppColors.surfaceContainerLowest,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: AppColors.brandSoft, width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: AppColors.brandSoft, width: 1),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),

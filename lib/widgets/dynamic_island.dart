@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:ontacoche/theme/app_colors.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/tracking_flow.dart';
@@ -64,7 +65,7 @@ class _DynamicIslandState extends ConsumerState<DynamicIsland>
         final Widget islandBody = PhysicalModel(
           color: Colors.transparent,
           elevation: _isExpanded ? 18 : 10,
-          shadowColor: Colors.black54,
+          shadowColor: AppColors.secondary.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(_isExpanded ? 32 : 28),
           child: Material(
             color: Colors.transparent,
@@ -77,13 +78,11 @@ class _DynamicIslandState extends ConsumerState<DynamicIsland>
                 width: _isExpanded ? maxWidth : compactWidth,
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF101010), Color(0xFF050505)],
+                  color: AppColors.surfaceContainerLowest.withValues(
+                    alpha: 0.90,
                   ),
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.12),
+                    color: AppColors.foreground.withValues(alpha: 0.12),
                     width: 1,
                   ),
                   borderRadius: BorderRadius.circular(_isExpanded ? 32 : 28),
@@ -98,12 +97,12 @@ class _DynamicIslandState extends ConsumerState<DynamicIsland>
                   alignment: Alignment.topCenter,
                   child: DefaultTextStyle(
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: AppColors.foreground,
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                     ),
                     child: IconTheme(
-                      data: const IconThemeData(color: Colors.white),
+                      data: const IconThemeData(color: AppColors.foreground),
                       child: _isExpanded
                           ? Opacity(
                               opacity: factor.clamp(0.0, 1.0),
@@ -184,10 +183,12 @@ class _StatusCard extends ConsumerWidget {
         children: [
           Icon(
             initialTrackingState.hasPosition
-                ? Icons.gps_fixed_rounded
+                ? Icons.satellite_alt_rounded
                 : Icons.travel_explore_rounded,
-            color: Colors.white,
-            size: 16,
+            color: initialTrackingState.hasPosition
+                ? AppColors.brand
+                : AppColors.danger,
+            size: 18,
           ),
           const SizedBox(width: 8),
           Flexible(
@@ -195,29 +196,29 @@ class _StatusCard extends ConsumerWidget {
               deviceName,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
+                color: AppColors.foreground,
+                fontSize: 16,
                 fontWeight: FontWeight.w700,
                 letterSpacing: -0.2,
               ),
             ),
           ),
           const SizedBox(width: 12),
-          Container(width: 1, height: 14, color: Colors.white24),
+          Container(width: 1, height: 14, color: AppColors.foreground),
           const SizedBox(width: 12),
           Icon(
             _getBatteryIcon(position?.batteryLevel),
             color: (position?.batteryLevel ?? 100) < 20
                 ? Colors.redAccent
-                : Colors.white,
-            size: 14,
+                : AppColors.brand,
+            size: 18,
           ),
           const SizedBox(width: 4),
           Text(
             batteryText,
             style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
+              color: AppColors.foreground,
+              fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -292,14 +293,16 @@ class _StatusCard extends ConsumerWidget {
                   Text(
                     deviceName,
                     style: theme.textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
+                      color: AppColors.foreground,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   Text(
                     statusText,
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: Colors.white70,
+                      color: initialTrackingState.hasPosition
+                          ? AppColors.brand
+                          : AppColors.danger,
                       fontWeight: FontWeight.w400,
                     ),
                   ),
@@ -314,14 +317,15 @@ class _StatusCard extends ConsumerWidget {
                     size: 20,
                     color: (position?.batteryLevel ?? 100) < 20
                         ? Colors.redAccent
-                        : Colors.white,
+                        : AppColors.brand,
                   ),
                   const SizedBox(width: 4),
                   Text(
                     '${position?.batteryLevel?.toStringAsFixed(0) ?? '--'}%',
                     style: theme.textTheme.labelLarge?.copyWith(
                       fontWeight: FontWeight.w900,
-                      color: Colors.white,
+                      color: AppColors.foreground,
+                      fontSize: 16,
                     ),
                   ),
                 ],
@@ -329,7 +333,7 @@ class _StatusCard extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 12),
-          const Divider(height: 1, color: Colors.white12),
+          const Divider(height: 1, color: AppColors.muted),
           const SizedBox(height: 8),
           _InfoRow(
             icon: Icons.navigation_rounded,
@@ -455,10 +459,10 @@ class _InfoRow extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.white10,
+                color: AppColors.surfaceContainerLowest,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, size: 18, color: Colors.white),
+              child: Icon(icon, size: 18, color: AppColors.foreground),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -470,7 +474,7 @@ class _InfoRow extends StatelessWidget {
                       Text(
                         label,
                         style: const TextStyle(
-                          color: Colors.white60,
+                          color: AppColors.brand,
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                         ),
@@ -480,7 +484,7 @@ class _InfoRow extends StatelessWidget {
                         const Icon(
                           Icons.arrow_drop_down_rounded,
                           size: 16,
-                          color: Colors.white60,
+                          color: AppColors.foreground,
                         ),
                       ],
                     ],
@@ -488,7 +492,7 @@ class _InfoRow extends StatelessWidget {
                   Text(
                     value,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: AppColors.foreground,
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                     ),

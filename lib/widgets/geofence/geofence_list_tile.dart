@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ontacoche/theme/app_colors.dart';
+import 'package:ontacoche/widgets/expressive_indicator.dart';
 import '../../models/geofence.dart';
 
 class GeofenceListTile extends StatelessWidget {
@@ -6,6 +8,7 @@ class GeofenceListTile extends StatelessWidget {
   final bool isEditing;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final bool isDeleting;
 
   const GeofenceListTile({
     super.key,
@@ -13,6 +16,7 @@ class GeofenceListTile extends StatelessWidget {
     required this.isEditing,
     required this.onEdit,
     required this.onDelete,
+    required this.isDeleting,
   });
 
   @override
@@ -24,21 +28,28 @@ class GeofenceListTile extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: isEditing
-            ? const Color(0xFF1E1E1E)
-            : const Color(0xFF0E0E0E), // surface-container-low or lowest
+            ? AppColors.surface
+            : AppColors.surfaceContainerLow, // surface-container-low or lowest
         borderRadius: BorderRadius.circular(16),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: AppColors.secondary.withValues(alpha: 0.04),
+            blurRadius: 24,
+          ),
+        ],
       ),
+
       child: ListTile(
         title: Text(
           geofence.name,
           style: const TextStyle(
-            color: Colors.white,
+            color: AppColors.foreground,
             fontWeight: FontWeight.w600,
           ),
         ),
         subtitle: Text(
           'Prioridad ${geofence.priority} · $shapeLabel',
-          style: const TextStyle(color: Colors.white54),
+          style: const TextStyle(color: AppColors.foreground),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -46,19 +57,24 @@ class GeofenceListTile extends StatelessWidget {
             IconButton(
               tooltip: 'Editar',
               onPressed: onEdit,
-              icon: Icon(
-                Icons.edit_rounded,
-                color: isEditing ? const Color(0xFF5ADCB3) : Colors.white70,
-              ),
+              icon: Icon(Icons.edit_rounded, color: AppColors.brand),
             ),
-            IconButton(
-              tooltip: 'Eliminar',
-              onPressed: onDelete,
-              icon: const Icon(
-                Icons.delete_outline_rounded,
-                color: Colors.redAccent,
-              ),
-            ),
+            isDeleting
+                ? SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: Center(
+                      child: ExpressiveIndicator(size: 18, strokeWidth: 2),
+                    ),
+                  )
+                : IconButton(
+                    tooltip: 'Eliminar',
+                    onPressed: onDelete,
+                    icon: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Colors.redAccent,
+                    ),
+                  ),
           ],
         ),
       ),

@@ -49,7 +49,7 @@ class GeofenceEditorCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF131313), // surface
+        color: AppColors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(18),
         boxShadow: <BoxShadow>[
           BoxShadow(
@@ -73,7 +73,7 @@ class GeofenceEditorCard extends StatelessWidget {
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: AppColors.foreground,
               letterSpacing: 0.5,
             ),
           ),
@@ -98,13 +98,13 @@ class GeofenceEditorCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1E1E1E),
+                    color: AppColors.surfaceContainerLowest,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white24),
+                    border: Border.all(color: AppColors.brandSoft),
                   ),
                   child: DropdownButton<String>(
                     value: radiusUnit,
-                    dropdownColor: const Color(0xFF131313),
+                    dropdownColor: AppColors.surfaceContainerLow,
                     underline: const SizedBox.shrink(),
                     items: const [
                       DropdownMenuItem(value: 'km', child: Text('km')),
@@ -112,7 +112,7 @@ class GeofenceEditorCard extends StatelessWidget {
                       DropdownMenuItem(value: 'm', child: Text('m')),
                     ],
                     onChanged: onUnitChanged,
-                    style: const TextStyle(color: Colors.white),
+                    style: const TextStyle(color: AppColors.foreground),
                   ),
                 ),
               ],
@@ -125,11 +125,11 @@ class GeofenceEditorCard extends StatelessWidget {
               editorType == GeofenceType.polygon,
             ],
             onPressed: onToggleEditorType,
-            color: Colors.white54,
-            selectedColor: const Color(0xFF5ADCB3),
-            fillColor: const Color(0xFF5ADCB3).withValues(alpha: 0.1),
-            borderColor: Colors.white24,
-            selectedBorderColor: const Color(0xFF5ADCB3).withValues(alpha: 0.5),
+            color: AppColors.foreground,
+            selectedColor: AppColors.brand,
+            fillColor: AppColors.brand.withValues(alpha: 0.1),
+            borderColor: AppColors.brand,
+            selectedBorderColor: AppColors.brand.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(8),
             children: const <Widget>[
               Padding(
@@ -156,8 +156,8 @@ class GeofenceEditorCard extends StatelessWidget {
                       icon: Icon(
                         Icons.edit_location_rounded,
                         color: isDrawingPolygon
-                            ? const Color(0xFF5ADCB3)
-                            : Colors.white70,
+                            ? AppColors.brand
+                            : AppColors.foreground,
                       ),
                       style: _iconButtonStyle(),
                     ),
@@ -166,7 +166,7 @@ class GeofenceEditorCard extends StatelessWidget {
                       onPressed: draftPath.isEmpty ? null : onUndoPolygon,
                       icon: const Icon(
                         Icons.undo_rounded,
-                        color: Colors.white70,
+                        color: AppColors.foreground,
                       ),
                       style: _iconButtonStyle(),
                     ),
@@ -175,7 +175,7 @@ class GeofenceEditorCard extends StatelessWidget {
                       onPressed: draftPath.isEmpty ? null : onClearPolygon,
                       icon: const Icon(
                         Icons.clear_rounded,
-                        color: Colors.white70,
+                        color: AppColors.foreground,
                       ),
                       style: _iconButtonStyle(),
                     ),
@@ -189,8 +189,8 @@ class GeofenceEditorCard extends StatelessWidget {
                       icon: Icon(
                         Icons.touch_app_rounded,
                         color: isPickingCenter
-                            ? const Color(0xFF5ADCB3)
-                            : Colors.white70,
+                            ? AppColors.brand
+                            : AppColors.foreground,
                       ),
                       style: _iconButtonStyle(),
                     ),
@@ -200,7 +200,7 @@ class GeofenceEditorCard extends StatelessWidget {
               IconButton(
                 onPressed: isSaving ? null : onSave,
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF5ADCB3),
+                  backgroundColor: AppColors.brand,
                   foregroundColor: const Color(0xFF131313),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(24),

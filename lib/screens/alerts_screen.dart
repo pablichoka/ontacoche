@@ -23,186 +23,211 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       alertsHistoryProvider,
     );
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text(
-          'Alertas',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-      ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: alertsState.when(
-              data: (List<DeviceAlert> alerts) {
-                if (alerts.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.notifications_off_rounded,
-                          size: 48,
-                          color: AppColors.muted,
-                        ),
-                        const SizedBox(height: 16),
-                        const Text('No hay alertas recientes'),
-                      ],
+    return ColoredBox(
+      color: AppColors.background,
+      child: SafeArea(
+        bottom: false,
+        child: Stack(
+          children: [
+            CustomScrollView(
+              physics: const BouncingScrollPhysics(),
+              slivers: <Widget>[
+                SliverToBoxAdapter(
+                  child: Container(
+                    color: AppColors.surface,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
                     ),
-                  );
-                }
-
-                final List<_AlertGroup> groups = _groupAlertsByDay(alerts);
-
-                return ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 200),
-                  itemCount: groups.length,
-                  itemBuilder: (BuildContext context, int index) {
-                    final _AlertGroup group = groups[index];
-                    return Padding(
-                      padding: EdgeInsets.only(
-                        bottom: index == groups.length - 1 ? 0 : 20,
+                    child: const Text(
+                      'Alertas',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 20,
+                        color: AppColors.foreground,
+                        letterSpacing: -0.5,
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Padding(
-                            padding: const EdgeInsets.only(left: 4, bottom: 10),
-                            child: Text(
-                              group.label,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
+                alertsState.when(
+                  data: (List<DeviceAlert> alerts) {
+                    if (alerts.isEmpty) {
+                      return const SliverFillRemaining(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.notifications_off_rounded,
+                                size: 48,
                                 color: AppColors.muted,
                               ),
-                            ),
+                              SizedBox(height: 16),
+                              Text('No hay alertas recientes'),
+                            ],
                           ),
-                          ...group.alerts.map(
-                            (DeviceAlert alert) => Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: _AlertCard(alert: alert),
-                            ),
-                          ),
-                        ],
+                        ),
+                      );
+                    }
+
+                    final List<_AlertGroup> groups = _groupAlertsByDay(alerts);
+
+                    return SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      sliver: SliverList(
+                        delegate: SliverChildListDelegate(
+                          groups.expand((_AlertGroup group) {
+                            return <Widget>[
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  top: 16,
+                                  left: 4,
+                                  bottom: 10,
+                                ),
+                                child: Text(
+                                  group.label,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.6,
+                                    color: AppColors.muted,
+                                  ),
+                                ),
+                              ),
+                              ...group.alerts.map(
+                                (DeviceAlert alert) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: _AlertCard(alert: alert),
+                                ),
+                              ),
+                            ];
+                          }).toList(),
+                        ),
                       ),
                     );
                   },
-                );
-              },
-              loading: () => const Center(child: ExpressiveIndicator()),
-              error: (err, stack) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      const Icon(
-                        Icons.notifications_off_rounded,
-                        size: 48,
-                        color: AppColors.muted,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'No se pudieron cargar las alertas',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => ref.invalidate(alertsHistoryProvider),
-                        child: const Text('Reintentar'),
-                      ),
-                    ],
+                  loading: () => const SliverFillRemaining(
+                    child: Center(child: ExpressiveIndicator()),
                   ),
-                ),
-              ),
-            ),
-          ),
-
-          Positioned(
-            right: 16,
-            bottom: 150,
-            child: FloatingActionButton(
-              shape: const CircleBorder(),
-              clipBehavior: Clip.hardEdge,
-              backgroundColor: Colors.redAccent,
-              onPressed: _isDeleting
-                  ? null
-                  : () async {
-                      final bool? confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Borrar alertas'),
-                          content: const Text(
-                            '¿Eliminar todas las alertas del servidor? Esta acción es irreversible.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(false),
-                              child: const Text('Cancelar'),
+                  error: (Object err, StackTrace stack) => SliverFillRemaining(
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            const Icon(
+                              Icons.notifications_off_rounded,
+                              size: 48,
+                              color: AppColors.muted,
                             ),
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(true),
-                              child: const Text('Eliminar'),
+                            const SizedBox(height: 12),
+                            Text(
+                              'No se pudieron cargar las alertas',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () =>
+                                  ref.invalidate(alertsHistoryProvider),
+                              child: const Text('Reintentar'),
                             ),
                           ],
                         ),
-                      );
-
-                      if (confirmed != true) return;
-                      if (!context.mounted) return;
-
-                      FocusScope.of(context).unfocus();
-                      setState(() => _isDeleting = true);
-
-                      try {
-                        final service = ref.read(
-                          vercelConnectorServiceProvider,
-                        );
-                        final String deviceId = ref
-                            .read(deviceIdentProvider)
-                            .trim();
-                        final int deleted = await service
-                            .deleteDeviceAlertsForDevice(deviceId);
-                        ref.invalidate(alertsHistoryProvider);
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Eliminadas $deleted alertas'),
+                      ),
+                    ),
+                  ),
+                ),
+                // Add minor padding to bottom
+                const SliverToBoxAdapter(child: SizedBox(height: 32)),
+              ],
+            ),
+            Positioned(
+              right: 16,
+              bottom: 150,
+              child: FloatingActionButton(
+                shape: const CircleBorder(),
+                clipBehavior: Clip.hardEdge,
+                backgroundColor: Colors.redAccent,
+                onPressed: _isDeleting
+                    ? null
+                    : () async {
+                        final bool? confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Borrar alertas'),
+                            content: const Text(
+                              '¿Eliminar todas las alertas del servidor? Esta acción es irreversible.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(context).pop(false),
+                                child: const Text('Cancelar'),
+                              ),
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(context).pop(true),
+                                child: const Text('Eliminar'),
+                              ),
+                            ],
                           ),
                         );
-                      } catch (e) {
+
+                        if (confirmed != true) return;
                         if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error al eliminar: $e')),
-                        );
-                      } finally {
-                        if (mounted) setState(() => _isDeleting = false);
-                      }
-                    },
-              child: _isDeleting
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: ExpressiveIndicator(
-                        strokeWidth: 2.2,
-                        color: Colors.white,
+
+                        FocusScope.of(context).unfocus();
+                        setState(() => _isDeleting = true);
+
+                        try {
+                          final service = ref.read(
+                            vercelConnectorServiceProvider,
+                          );
+                          final String deviceId =
+                              ref.read(deviceIdentProvider).trim();
+                          final int deleted =
+                              await service.deleteDeviceAlertsForDevice(
+                                deviceId,
+                              );
+                          ref.invalidate(alertsHistoryProvider);
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Eliminadas $deleted alertas'),
+                            ),
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Error al eliminar: $e')),
+                          );
+                        } finally {
+                          if (mounted) setState(() => _isDeleting = false);
+                        }
+                      },
+                child: _isDeleting
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: ExpressiveIndicator(
+                          strokeWidth: 2.2,
+                          color: AppColors.foreground,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.delete_rounded,
+                        color: AppColors.foreground,
+                        size: 24,
                       ),
-                    )
-                  : const Icon(
-                      Icons.delete_rounded,
-                      color: Colors.white,
-                      size: 24,
-                    ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
+
   }
 }
 
@@ -290,13 +315,12 @@ class _AlertCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.16),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: AppColors.secondary.withValues(alpha: 0.04),
+              blurRadius: 24,
+            ),
+          ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -340,7 +364,7 @@ class _AlertCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   alert.message,
-                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  style: const TextStyle(color: AppColors.foreground, fontSize: 14),
                 ),
               ],
             ),

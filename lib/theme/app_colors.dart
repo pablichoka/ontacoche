@@ -7,7 +7,7 @@ abstract final class AppColors {
   static const Color surface = Color(0xFF131313);
   static const Color surfaceContainerLow = Color(0xFF1E1E1E);
   static const Color surfaceContainerLowest = Color(0xFF0E0E0E);
-  static const Color foreground = Colors.white;
+  static const Color foreground = Color.fromARGB(255, 255, 255, 255);
   static const Color muted = Color(0xFFA1A1AA);
   static const Color success = Color(0xFF5ADCB3);
   static const Color danger = Color(0xFFFFB68D);

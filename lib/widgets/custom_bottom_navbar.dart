@@ -47,7 +47,7 @@ class CustomBottomNavbar extends StatelessWidget {
           elevation: 8,
           color: AppColors.surfaceContainerLowest.withValues(alpha: 0.90),
           borderRadius: BorderRadius.circular(999),
-          shadowColor: AppColors.brand.withValues(alpha: 0.04),
+          shadowColor: AppColors.secondary.withValues(alpha: 0.04),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: Row(

@@ -208,7 +208,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     child: FloatingActionButton(
                       shape: const CircleBorder(),
                       clipBehavior: Clip.hardEdge,
-                      backgroundColor: AppColors.surfaceContainerLow,
+                      backgroundColor: Colors.red,
                       onPressed: () async {
                         if (_isParkingDeleting) return;
 
@@ -268,13 +268,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                       },
                       child: _isParkingDeleting
                           ? const ExpressiveIndicator(
-                              color: Colors.redAccent,
+                              color: AppColors.foreground,
                               strokeWidth: 3,
-                              size: 20,
+                              size: 24,
                             )
                           : const Icon(
                               Icons.delete_outline_rounded,
-                              color: Colors.redAccent,
+                              color: AppColors.foreground,
                               size: 24,
                             ),
                     ),
@@ -408,14 +408,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     },
                     child: _isParkingCreating
                         ? const ExpressiveIndicator(
-                            color: Colors.white,
+                            color: AppColors.foreground,
                             strokeWidth: 3,
                             size: 20,
                           )
                         : const Icon(
                             Icons.local_parking,
                             size: 24,
-                            color: Colors.white,
+                            color: AppColors.foreground,
                           ),
                   );
                 },

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:ontacoche/theme/app_colors.dart';
 
 class ExpressiveIndicator extends StatefulWidget {
   const ExpressiveIndicator({
-    this.color = Colors.white,
+    this.color = AppColors.foreground,
     this.strokeWidth = 3.0,
     this.size = 20.0,
     super.key,
