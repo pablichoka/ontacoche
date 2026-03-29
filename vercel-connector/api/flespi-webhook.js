@@ -529,74 +529,80 @@ async function persistEvent({ firestore, config, event, classification }) {
     await firestore.collection(config.stateHistoryCollection).add(writeSnapshot);
 
     // TAREA 2: MOTOR DE ESTADO DE TRIPS
-    const tripsColl = firestore.collection(config.tripsCollection || 'trips');
+    try {
+      const tripsColl = firestore.collection(config.tripsCollection || 'trips');
 
-    // Paso 2.1: Buscar Trip Activo
-    const activeTripQuery = await tripsColl
-      .where('device_id', '==', deviceIdStr)
-      .where('status', '==', 'in_progress')
-      .limit(1)
-      .get();
-
-    if (activeTripQuery.empty) {
-      // Paso 2.2: Lógica si NO hay Trip Activo (Evaluación de Inicio)
-      const historyQuery = await firestore.collection(config.stateHistoryCollection)
-        .where('device.id', '==', deviceIdStr)
-        .orderBy('source_ts', 'desc') // Usamos source_ts ya que snapshot no tiene source_ts_ms al persistir
-        .limit(6)
+      // Paso 2.1: Buscar Trip Activo
+      const activeTripQuery = await tripsColl
+        .where('device_id', '==', deviceIdStr)
+        .where('status', '==', 'in_progress')
+        .limit(1)
         .get();
 
-      if (historyQuery.size === 6) {
-        const points = historyQuery.docs.map(doc => doc.data()).reverse(); // Orden cronologico
-        const latestPoint = points[points.length - 1];
-        const oldestPoint = points[0];
+      if (activeTripQuery.empty) {
+        // Paso 2.2: Lógica si NO hay Trip Activo (Evaluación de Inicio)
+        const historyQuery = await firestore.collection(config.stateHistoryCollection)
+          .where('device.id', '==', deviceIdStr)
+          .orderBy('source_ts', 'desc')
+          .limit(6)
+          .get();
 
-        // Calcular lapso de tiempo (basado en ISO string ya que no guardamos ms en historial)
-        const latestTs = new Date(latestPoint.source_ts).getTime();
-        const oldestTs = new Date(oldestPoint.source_ts).getTime();
+        if (historyQuery.size === 6) {
+          const points = historyQuery.docs.map(doc => doc.data()).reverse();
+          const latestPoint = points[points.length - 1];
+          const oldestPoint = points[0];
 
-        if (latestTs - oldestTs <= 300000) {
-          await tripsColl.add({
-            device_id: deviceIdStr,
-            status: 'in_progress',
-            start_ts: oldestPoint.source_ts,
-            end_ts: null,
-            points: points
-          });
+          const latestTs = new Date(latestPoint.source_ts).getTime();
+          const oldestTs = new Date(oldestPoint.source_ts).getTime();
+
+          if (latestTs - oldestTs <= 300000) {
+            await tripsColl.add({
+              device_id: deviceIdStr,
+              status: 'in_progress',
+              start_ts: oldestPoint.source_ts,
+              end_ts: null,
+              points: points
+            });
+          }
         }
-      }
-    } else {
-      // Paso 2.3: Lógica si SÍ hay un Trip Activo (Actualización y Evaluación de Cierre)
-      const tripDoc = activeTripQuery.docs[0];
-      const tripData = tripDoc.data();
-      const updatedPoints = [...tripData.points, writeSnapshot];
+      } else {
+        // Paso 2.3: Lógica si SÍ hay un Trip Activo
+        const tripDoc = activeTripQuery.docs[0];
+        const tripData = tripDoc.data();
+        const updatedPoints = [...tripData.points, writeSnapshot];
 
-      // Evaluar condición de cierre (Parada detectada)
-      if (updatedPoints.length >= 4) {
-        const last4 = updatedPoints.slice(-4);
-        const isStopped = last4.every(p => (p.position.speed || 0) < 1);
+        if (updatedPoints.length >= 4) {
+          const last4 = updatedPoints.slice(-4);
+          const isStopped = last4.every(p => (p.position.speed || 0) < 1);
 
-        if (isStopped) {
-          const finalPoints = updatedPoints.slice(0, -4);
-          const endTs = finalPoints.length > 0 
-            ? finalPoints[finalPoints.length - 1].source_ts 
-            : tripData.start_ts;
+          if (isStopped) {
+            const finalPoints = updatedPoints.slice(0, -4);
+            const endTs = finalPoints.length > 0 
+              ? finalPoints[finalPoints.length - 1].source_ts 
+              : tripData.start_ts;
 
-          await tripDoc.ref.update({
-            status: 'completed',
-            end_ts: endTs,
-            points: finalPoints
-          });
+            await tripDoc.ref.update({
+              status: 'completed',
+              end_ts: endTs,
+              points: finalPoints
+            });
+          } else {
+            await tripDoc.ref.update({
+              points: admin.firestore.FieldValue.arrayUnion(writeSnapshot)
+            });
+          }
         } else {
           await tripDoc.ref.update({
             points: admin.firestore.FieldValue.arrayUnion(writeSnapshot)
           });
         }
-      } else {
-        await tripDoc.ref.update({
-          points: admin.firestore.FieldValue.arrayUnion(writeSnapshot)
-        });
       }
+    } catch (tripError) {
+      writeLog('error', 'Error en motor de trips', { 
+        deviceId: deviceIdStr, 
+        error: tripError.message 
+      });
+      // Continuamos para no bloquear alertas
     }
   } else if (config.storeStateHistory && (!isPeriodicPos || !hasValidGPS)) {
     // Si no es valido para historial, abortamos evaluacion de trips pero permitimos alertas
