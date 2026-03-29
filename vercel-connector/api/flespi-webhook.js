@@ -510,41 +510,113 @@ async function persistEvent({ firestore, config, event, classification }) {
   }
 
   const raw = event.raw || {};
-  const stateRef = firestore
-    .collection(config.deviceStateCollection)
-    .doc(String(event.deviceId));
+  const deviceIdStr = String(event.deviceId);
+  const stateRef = firestore.collection(config.deviceStateCollection).doc(deviceIdStr);
 
-  let currentGeofenceStatus = null;
-
-  const currentRaw = firstDefined(raw, ['plugin.geofence.status', 'geofence.status']);
-  currentGeofenceStatus = currentRaw == null ? null : asBoolean(currentRaw);
-
-  let effectiveClassification = classification;
-
-  const snapshot = buildStateSnapshot(event, effectiveClassification, config);
+  const snapshot = buildStateSnapshot(event, classification, config);
   const writeSnapshot = { ...snapshot };
   delete writeSnapshot.source_ts_ms;
   delete writeSnapshot.updated_at;
 
-    await stateRef.set(writeSnapshot);
+  // Actualizar ultimo estado conocido siempre
+  await stateRef.set(writeSnapshot);
 
-    if (config.storeStateHistory) {
-      await firestore.collection(config.stateHistoryCollection).add(writeSnapshot);
+  // TAREA 1: FILTRADO ESTRICTO DE HISTORIAL (Evitar tramas basura)
+  const isPeriodicPos = event.reportCode === '0200';
+  const hasValidGPS = snapshot.position.latitude != null && snapshot.position.longitude != null;
+
+  if (config.storeStateHistory && isPeriodicPos && hasValidGPS) {
+    await firestore.collection(config.stateHistoryCollection).add(writeSnapshot);
+
+    // TAREA 2: MOTOR DE ESTADO DE TRIPS
+    const tripsColl = firestore.collection(config.tripsCollection || 'trips');
+
+    // Paso 2.1: Buscar Trip Activo
+    const activeTripQuery = await tripsColl
+      .where('device_id', '==', deviceIdStr)
+      .where('status', '==', 'in_progress')
+      .limit(1)
+      .get();
+
+    if (activeTripQuery.empty) {
+      // Paso 2.2: Lógica si NO hay Trip Activo (Evaluación de Inicio)
+      const historyQuery = await firestore.collection(config.stateHistoryCollection)
+        .where('device.id', '==', deviceIdStr)
+        .orderBy('source_ts', 'desc') // Usamos source_ts ya que snapshot no tiene source_ts_ms al persistir
+        .limit(6)
+        .get();
+
+      if (historyQuery.size === 6) {
+        const points = historyQuery.docs.map(doc => doc.data()).reverse(); // Orden cronologico
+        const latestPoint = points[points.length - 1];
+        const oldestPoint = points[0];
+
+        // Calcular lapso de tiempo (basado en ISO string ya que no guardamos ms en historial)
+        const latestTs = new Date(latestPoint.source_ts).getTime();
+        const oldestTs = new Date(oldestPoint.source_ts).getTime();
+
+        if (latestTs - oldestTs <= 300000) {
+          await tripsColl.add({
+            device_id: deviceIdStr,
+            status: 'in_progress',
+            start_ts: oldestPoint.source_ts,
+            end_ts: null,
+            points: points
+          });
+        }
+      }
+    } else {
+      // Paso 2.3: Lógica si SÍ hay un Trip Activo (Actualización y Evaluación de Cierre)
+      const tripDoc = activeTripQuery.docs[0];
+      const tripData = tripDoc.data();
+      const updatedPoints = [...tripData.points, writeSnapshot];
+
+      // Evaluar condición de cierre (Parada detectada)
+      if (updatedPoints.length >= 4) {
+        const last4 = updatedPoints.slice(-4);
+        const isStopped = last4.every(p => (p.position.speed || 0) < 1);
+
+        if (isStopped) {
+          const finalPoints = updatedPoints.slice(0, -4);
+          const endTs = finalPoints.length > 0 
+            ? finalPoints[finalPoints.length - 1].source_ts 
+            : tripData.start_ts;
+
+          await tripDoc.ref.update({
+            status: 'completed',
+            end_ts: endTs,
+            points: finalPoints
+          });
+        } else {
+          await tripDoc.ref.update({
+            points: admin.firestore.FieldValue.arrayUnion(writeSnapshot)
+          });
+        }
+      } else {
+        await tripDoc.ref.update({
+          points: admin.firestore.FieldValue.arrayUnion(writeSnapshot)
+        });
+      }
     }
+  } else if (config.storeStateHistory && (!isPeriodicPos || !hasValidGPS)) {
+    // Si no es valido para historial, abortamos evaluacion de trips pero permitimos alertas
+    // No hacemos nada aqui, solo evitamos el bloque anterior
+  }
 
-  if (effectiveClassification.vibrationAlarm || effectiveClassification.geofenceAlarm) {
-    const dedupeBucket = effectiveClassification.vibrationAlarm
+  // LOGICA DE ALERTAS Y GEOCERCAS (Se mantiene intacta)
+  if (classification.vibrationAlarm || classification.geofenceAlarm) {
+    const dedupeBucket = classification.vibrationAlarm
       ? Math.floor(snapshot.source_ts_ms / (VIBRATION_DEDUPE_WINDOW_SECONDS * 1000))
       : Math.floor(snapshot.source_ts_ms / (GEOFENCE_DEDUPE_WINDOW_SECONDS * 1000));
 
-    const alertKind = effectiveClassification.vibrationAlarm
+    const alertKind = classification.vibrationAlarm
       ? 'vibration_alert'
-      : (effectiveClassification.geofenceEnter
+      : (classification.geofenceEnter
         ? 'geofence_enter'
-        : (effectiveClassification.geofenceExit ? 'geofence_exit' : 'geofence_alert'));
+        : (classification.geofenceExit ? 'geofence_exit' : 'geofence_alert'));
 
     const geofenceIntervalId =
-      effectiveClassification.geofenceAlarm && event.eventId != null
+      classification.geofenceAlarm && event.eventId != null
         ? String(event.eventId)
         : null;
 
@@ -554,61 +626,58 @@ async function persistEvent({ firestore, config, event, classification }) {
     const dedupeKey = geofenceIntervalId
       ? makeStableId([
         'gf',
-        String(event.deviceId),
+        deviceIdStr,
         geofenceIntervalId,
         alertKind,
-        effectiveClassification.geofenceName || '',
+        classification.geofenceName || '',
         geofenceTopic.includes('/updated') && geofenceIntervalEnd != null
           ? String(geofenceIntervalEnd)
           : '',
       ].join('|'))
       : makeStableId([
-        String(event.deviceId),
+        deviceIdStr,
         alertKind,
-        effectiveClassification.geofenceName || '',
+        classification.geofenceName || '',
         String(dedupeBucket),
       ].join('|'));
       
     const alertRef = firestore.collection(config.alertsCollection).doc(dedupeKey);
     const existing = await alertRef.get();
 
-    // BLOQUEO ABSOLUTO: Si esta alerta con este ID (dedupeKey) ya existe en Firestore, 
-    // abortamos. Así evitamos que un recálculo de Flespi ejecute un merge:true
-    // sobrescribiendo la fecha y empujándola a la app como nueva.
     if (existing.exists) {
       writeLog('info', 'Ignorando alerta duplicada/recalculada', { dedupeKey, event_id: event.eventId });
       return {
         alertCreated: false,
         dedupeKey,
         eventKind: alertKind,
-        classification: effectiveClassification,
+        classification,
       };
     }
 
     const alertDocBase = {
       source_ts: snapshot.source_ts,
-      device: { id: String(event.deviceId), name: snapshot.device?.name || null },
+      device: { id: deviceIdStr, name: snapshot.device?.name || null },
       dedupe_key: dedupeKey,
       event_id: event.eventId || null,
       event_kind: alertKind,
-      severity: effectiveClassification.severity,
+      severity: classification.severity,
       checked: false, 
       checked_at: null,
     };
 
-    const alertDoc = effectiveClassification.vibrationAlarm
+    const alertDoc = classification.vibrationAlarm
       ? {
         ...alertDocBase,
         vibration_alarm: true,
-        message: effectiveClassification.body || 'Se detecto vibración en el tracker',
+        message: classification.body || 'Se detecto vibración en el tracker',
       }
       : {
         ...alertDocBase,
-        geofence_alarm: Boolean(effectiveClassification.geofenceAlarm),
-        geofence_enter: Boolean(effectiveClassification.geofenceEnter),
-        geofence_exit: Boolean(effectiveClassification.geofenceExit),
-        geofence_name: effectiveClassification.geofenceName || null,
-        message: effectiveClassification.body || null,
+        geofence_alarm: Boolean(classification.geofenceAlarm),
+        geofence_enter: Boolean(classification.geofenceEnter),
+        geofence_exit: Boolean(classification.geofenceExit),
+        geofence_name: classification.geofenceName || null,
+        message: classification.body || null,
       };
 
     await alertRef.set(alertDoc, { merge: true });
@@ -626,11 +695,11 @@ async function persistEvent({ firestore, config, event, classification }) {
       alertCreated: true, 
       dedupeKey,
       eventKind: alertKind,
-      classification: effectiveClassification,
+      classification,
     };
   }
 
-  if (effectiveClassification.geofenceConfigChange) {
+  if (classification.geofenceConfigChange) {
     const geofenceChangeId = makeStableId([
       'gfcfg',
       String(event.geofenceId || event.eventId || event.deviceId || 'unknown'),
@@ -647,8 +716,8 @@ async function persistEvent({ firestore, config, event, classification }) {
       dedupe_key: geofenceChangeId,
       event_id: event.eventId || null,
       event_kind: 'geofence_config_change',
-      message: effectiveClassification.body,
-      severity: effectiveClassification.severity,
+      message: classification.body,
+      severity: classification.severity,
       checked: existing.exists ? Boolean(existing.data()?.checked) : true,
       checked_at: existing.exists ? (existing.data()?.checked_at || null) : new Date().toISOString(),
       created_at: existing.exists
@@ -661,7 +730,7 @@ async function persistEvent({ firestore, config, event, classification }) {
       alertCreated: !existing.exists,
       dedupeKey: geofenceChangeId,
       eventKind: 'geofence_config_change',
-      classification: effectiveClassification,
+      classification,
     };
   }
 
@@ -669,7 +738,7 @@ async function persistEvent({ firestore, config, event, classification }) {
     alertCreated: false,
     dedupeKey: null,
     eventKind: null,
-    classification: effectiveClassification,
+    classification,
   };
 }
 
