@@ -80,25 +80,31 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true, device_id: deviceId, deleted });
     }
 
-    let q = firestore
+    const snapshot = await firestore
       .collection(collectionName)
-      .where('deviceId', '==', deviceId);
+      .where('deviceId', '==', deviceId)
+      .get();
 
-    if (startedFrom) {
-      q = q.where('startedAt', '>=', startedFrom);
-    }
-    if (startedTo) {
-      q = q.where('startedAt', '<=', startedTo);
-    }
+    const fromMs = startedFrom ? Date.parse(startedFrom) : null;
+    const toMs = startedTo ? Date.parse(startedTo) : null;
 
-    q = q.orderBy('startedAt', 'desc').limit(limit);
-    const snapshot = await q.get();
-
-    const rows = snapshot.docs.map((doc) => {
-      const data = doc.data();
-      // include document id for client mapping
-      return Object.assign({ id: doc.id }, data);
-    });
+    const rows = snapshot.docs
+      .map((doc) => Object.assign({ id: doc.id }, doc.data()))
+      .filter((row) => {
+        const startedAtMs = Date.parse(String(row.startedAt || ''));
+        if (Number.isNaN(startedAtMs)) {
+          return false;
+        }
+        if (fromMs != null && !Number.isNaN(fromMs) && startedAtMs < fromMs) {
+          return false;
+        }
+        if (toMs != null && !Number.isNaN(toMs) && startedAtMs > toMs) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => Date.parse(String(b.startedAt || '')) - Date.parse(String(a.startedAt || '')))
+      .slice(0, limit);
 
     return res.status(200).json({ ok: true, trips: rows });
   } catch (error) {
