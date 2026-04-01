@@ -2,6 +2,52 @@ import 'package:latlong2/latlong.dart';
 
 import '../utils/parsers.dart';
 
+class TripPoint {
+  const TripPoint({
+    required this.lat,
+    required this.lng,
+    this.speed,
+    this.altitude,
+    this.ts,
+  });
+
+  final double lat;
+  final double lng;
+  final double? speed;
+  final double? altitude;
+  final DateTime? ts;
+
+  LatLng get latLng => LatLng(lat, lng);
+
+  factory TripPoint.fromMap(Map<String, dynamic> data) {
+    final double lat =
+        DeviceTrip._toDouble(
+          data['lat'] ?? data['latitude'] ?? data['position.latitude'],
+        ) ??
+        double.nan;
+    final double lng =
+        DeviceTrip._toDouble(
+          data['lng'] ??
+              data['lon'] ??
+              data['longitude'] ??
+              data['position.longitude'],
+        ) ??
+        double.nan;
+
+    return TripPoint(
+      lat: lat,
+      lng: lng,
+      speed: DeviceTrip._toDouble(
+        data['speed'] ?? data['spd'] ?? data['position.speed'],
+      ),
+      altitude: DeviceTrip._toDouble(
+        data['altitude'] ?? data['alt'] ?? data['position.altitude'],
+      ),
+      ts: Parsers.fromUnknown(data['ts'] ?? data['timestamp'] ?? data['time']),
+    );
+  }
+}
+
 class DeviceTrip {
   const DeviceTrip({
     required this.id,
@@ -13,6 +59,7 @@ class DeviceTrip {
     required this.maxSpeedKph,
     required this.polylineEncoded,
     required this.pathPoints,
+    required this.tripPoints,
   });
 
   final String id;
@@ -24,25 +71,60 @@ class DeviceTrip {
   final double maxSpeedKph;
   final String polylineEncoded;
   final List<LatLng> pathPoints;
+  final List<TripPoint> tripPoints;
 
   int get durationMinutes => (durationSec / 60).round();
 
   factory DeviceTrip.fromFirestore(String docId, Map<String, dynamic> data) {
-    final DateTime started = Parsers.fromUnknown(data['startedAt']) ?? DateTime.now();
+    final DateTime started =
+        Parsers.fromUnknown(data['startedAt']) ?? DateTime.now();
     final DateTime ended = Parsers.fromUnknown(data['endedAt']) ?? started;
     final String polyline = (data['polylineEncoded'] as String? ?? '').trim();
+    final List<TripPoint> pointsWithTelemetry = _parseTripPoints(
+      data['tripPoints'],
+    );
+    final List<LatLng> pathPoints = pointsWithTelemetry.isNotEmpty
+        ? pointsWithTelemetry
+              .map((point) => point.latLng)
+              .toList(growable: false)
+        : (polyline.isEmpty ? const <LatLng>[] : _decodePolyline(polyline));
 
     return DeviceTrip(
       id: docId,
       deviceId: (data['deviceId'] as String? ?? '').trim(),
       startedAt: started,
       endedAt: ended,
-      durationSec: _toInt(data['durationSec']) ?? ended.difference(started).inSeconds,
+      durationSec:
+          _toInt(data['durationSec']) ?? ended.difference(started).inSeconds,
       distanceM: _toDouble(data['distanceM']) ?? 0,
       maxSpeedKph: _toDouble(data['maxSpeedKph']) ?? 0,
       polylineEncoded: polyline,
-      pathPoints: polyline.isEmpty ? const <LatLng>[] : _decodePolyline(polyline),
+      pathPoints: pathPoints,
+      tripPoints: pointsWithTelemetry,
     );
+  }
+
+  static List<TripPoint> _parseTripPoints(Object? raw) {
+    if (raw is! List) {
+      return const <TripPoint>[];
+    }
+
+    final List<TripPoint> points = <TripPoint>[];
+    for (final Object? item in raw) {
+      if (item is! Map) {
+        continue;
+      }
+      final Map<String, dynamic> map = item.map(
+        (Object? key, Object? value) => MapEntry(key.toString(), value),
+      );
+      final TripPoint parsed = TripPoint.fromMap(map);
+      if (!parsed.lat.isFinite || !parsed.lng.isFinite) {
+        continue;
+      }
+      points.add(parsed);
+    }
+
+    return points;
   }
 
   static int? _toInt(Object? value) {

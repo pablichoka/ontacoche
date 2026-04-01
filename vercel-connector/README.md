@@ -80,6 +80,30 @@ Notes:
 - the webhook queries active tokens by `device_id` and/or `user_id`.
 - when Firebase returns `messaging/invalid-registration-token` or `messaging/registration-token-not-registered`, the token is marked as inactive.
 
+## firestore trip model (`device_trips`)
+
+The webhook persists closed trip intervals in `device_trips`. Besides summary fields (`startedAt`, `endedAt`, `distanceM`, `maxSpeedKph`, `polylineEncoded`), trips can include optional telemetry points for playback:
+
+```json
+{
+  "tripPoints": [
+    {
+      "lat": 18.7357,
+      "lng": -70.1627,
+      "speed": 42.1,
+      "altitude": 510.4,
+      "ts": 1774137600000
+    }
+  ],
+  "tripPointsCount": 1850,
+  "tripPointsSampled": true
+}
+```
+
+Notes:
+- `tripPoints` is optional for backward compatibility with historical trips.
+- large trips are downsampled server-side to protect Firestore document size limits.
+
 ## local run (optional)
 
 This project is designed for Vercel serverless runtime. You can still validate syntax locally:

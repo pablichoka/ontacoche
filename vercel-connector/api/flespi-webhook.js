@@ -522,6 +522,66 @@ function normalizeNumber(value) {
   return Number.isFinite(num) ? num : null;
 }
 
+function normalizeTripPoint(point) {
+  if (!point || typeof point !== 'object') {
+    return null;
+  }
+
+  const lat = normalizeNumber(firstDefined(point, ['lat', 'latitude', 'position.latitude']));
+  const lng = normalizeNumber(firstDefined(point, ['lng', 'lon', 'longitude', 'position.longitude']));
+  if (lat == null || lng == null) {
+    return null;
+  }
+
+  const speed = normalizeNumber(firstDefined(point, ['speed', 'spd', 'position.speed']));
+  const altitude = normalizeNumber(firstDefined(point, ['altitude', 'alt', 'position.altitude']));
+  const ts = parseTimestampToMs(firstDefined(point, ['ts', 'timestamp', 'time', 'server.timestamp']));
+
+  return {
+    lat,
+    lng,
+    speed,
+    altitude,
+    ts,
+  };
+}
+
+function downsampleTripPoints(points, maxPoints) {
+  if (!Array.isArray(points) || points.length <= maxPoints) {
+    return points;
+  }
+
+  const sampled = [];
+  const step = (points.length - 1) / (maxPoints - 1);
+  for (let i = 0; i < maxPoints; i += 1) {
+    const index = Math.round(i * step);
+    sampled.push(points[Math.min(index, points.length - 1)]);
+  }
+
+  return sampled;
+}
+
+function parseTripPoints(raw) {
+  const rawTripPoints = firstDefined(raw, [
+    'tripPoints',
+    'trip_points',
+    'payload.tripPoints',
+    'payload.trip_points',
+    'interval.tripPoints',
+    'interval.trip_points',
+    'dataset.tripPoints',
+    'dataset.trip_points',
+  ]);
+
+  if (!Array.isArray(rawTripPoints) || rawTripPoints.length === 0) {
+    return [];
+  }
+
+  return rawTripPoints
+    .map(normalizeTripPoint)
+    .filter((point) => point != null);
+}
+
 function parseTripPayload(event, classification) {
   if (!classification.tripClosed) {
     return null;
@@ -562,17 +622,24 @@ function parseTripPayload(event, classification) {
     'payload.polyline',
   ]);
 
+  const rawTripPoints = parseTripPoints(raw);
+  const maxTripPoints = 1200;
+  const tripPoints = downsampleTripPoints(rawTripPoints, maxTripPoints);
+
   return {
     beginMs,
     endMs,
     distanceM,
     maxSpeedKph,
     polylineEncoded: typeof polylineEncoded === 'string' ? polylineEncoded : null,
+    tripPoints,
+    tripPointsCount: rawTripPoints.length,
+    tripPointsSampled: rawTripPoints.length > tripPoints.length,
   };
 }
 
 function buildTripDocument(event, trip) {
-  return {
+  const doc = {
     deviceId: String(event.deviceId),
     startedAt: toIsoFromMs(trip.beginMs),
     endedAt: toIsoFromMs(trip.endMs),
@@ -584,6 +651,14 @@ function buildTripDocument(event, trip) {
     eventId: event.eventId || null,
     createdAt: new Date().toISOString(),
   };
+
+  if (Array.isArray(trip.tripPoints) && trip.tripPoints.length > 0) {
+    doc.tripPoints = trip.tripPoints;
+    doc.tripPointsCount = trip.tripPointsCount;
+    doc.tripPointsSampled = Boolean(trip.tripPointsSampled);
+  }
+
+  return doc;
 }
 
 async function writeAlertDocument({ firestore, config, event, alertKind, alertDoc }) {
