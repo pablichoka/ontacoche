@@ -54,13 +54,16 @@ class DeviceAlert {
         json['geofence'] ??
         payload['geofence_name'] ??
         payload['geofence'];
-    final bool explicitGeofence = geofenceRaw != null;
     final bool vibrationAlarm =
         json['vibration_alarm'] == true ||
         payload['vibration_alarm'] == true ||
         payload['vibration.alarm'] == true;
     final bool geofenceAlarm =
         json['geofence_alarm'] == true || payload['geofence_alarm'] == true;
+    final bool geofenceEnterFlag =
+        json['geofence_enter'] == true || payload['geofence_enter'] == true;
+    final bool geofenceExitFlag =
+        json['geofence_exit'] == true || payload['geofence_exit'] == true;
 
     DeviceAlertType type = DeviceAlertType.unknown;
     bool? isEntering;
@@ -69,35 +72,27 @@ class DeviceAlert {
         eventKind == 'vibration' ||
         eventKind.contains('vibration')) {
       type = DeviceAlertType.vibration;
-    } else if (eventKind == 'geofence_enter' ||
-        eventKind == 'enter') {
+    } else if (eventKind == 'geofence_enter' || eventKind == 'enter') {
       type = DeviceAlertType.geofence;
       isEntering = true;
-    } else if (eventKind == 'geofence_exit' ||
-        eventKind == 'exit') {
+    } else if (eventKind == 'geofence_exit' || eventKind == 'exit') {
       type = DeviceAlertType.geofence;
       isEntering = false;
+    } else if (eventKind == 'geofence_config_created' ||
+        eventKind == 'geofence_config_deleted') {
+      type = DeviceAlertType.geofence;
+      isEntering = null;
     } else if (vibrationAlarm) {
       type = DeviceAlertType.vibration;
     } else if (geofenceAlarm) {
+      if (geofenceEnterFlag == geofenceExitFlag) {
+        return null;
+      }
+
       type = DeviceAlertType.geofence;
-      isEntering =
-          (json['geofence_enter'] == true || payload['geofence_enter'] == true)
-          ? true
-          : ((json['geofence_exit'] == true || payload['geofence_exit'] == true)
-                ? false
-                : null);
+      isEntering = geofenceEnterFlag;
     } else if (json['alarm'] == true) {
       type = DeviceAlertType.vibration;
-    } else if (explicitGeofence ||
-        messageText.contains('geocerca') ||
-        titleText.contains('geocerca')) {
-      type = DeviceAlertType.geofence;
-      if (messageText.contains('entrada')) {
-        isEntering = true;
-      } else if (messageText.contains('salida')) {
-        isEntering = false;
-      }
     } else if (messageText.contains('vibr') || titleText.contains('vibr')) {
       type = DeviceAlertType.vibration;
     }
@@ -124,9 +119,11 @@ class DeviceAlert {
         : switch (type) {
             DeviceAlertType.vibration => '¡Vibración detectada!',
             DeviceAlertType.geofence =>
-              isEntering == true
-                  ? 'Entrada en geocerca detectada'
-                  : 'Salida de geocerca detectada',
+              isEntering == null
+                  ? 'Evento de geocerca'
+                  : (isEntering
+                        ? 'Entrada en geocerca detectada'
+                        : 'Salida de geocerca detectada'),
             DeviceAlertType.lowBattery => 'Batería baja detectada',
             DeviceAlertType.movement => 'Movimiento no autorizado detectado',
             DeviceAlertType.unknown => 'Alerta detectada',

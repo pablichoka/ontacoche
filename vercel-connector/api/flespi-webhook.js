@@ -39,6 +39,27 @@ function firstDefined(source, keys) {
   return null;
 }
 
+function sanitizeEventId(value) {
+  if (value == null) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.toLowerCase() === 'null') {
+    return null;
+  }
+
+  if (normalized.toLowerCase().startsWith('null_')) {
+    return null;
+  }
+
+  return normalized;
+}
+
 function normalizeReportCode(value) {
   if (value == null || value === '') {
     return null;
@@ -222,7 +243,7 @@ function normalizeEvent(body) {
   };
 
   return {
-    eventId: firstDefined(root, ['event_id', 'id', 'event.id']) || firstDefined(payload, ['event_id', 'id']) || null,
+    eventId: sanitizeEventId(firstDefined(root, ['event_id', 'id', 'event.id']) || firstDefined(payload, ['event_id', 'id']) || null),
     deviceId: deviceId != null ? String(deviceId) : null,
     userId: (firstDefined(root, ['user_id', 'userId']) || firstDefined(payload, ['user_id', 'userId']) || null),
     eventType: String(inferredEventType),
@@ -345,6 +366,7 @@ function classifyEvent(event, config) {
     'plugin.geofence.name',
     'name',
   ]);
+
   const explicitEnterGeofence = firstDefined(raw, ['enter_geofence', 'payload.enter_geofence']);
   const explicitExitGeofence = firstDefined(raw, ['exit_geofence', 'payload.exit_geofence']);
   const geofenceName = geofenceRaw && typeof geofenceRaw === 'object'
@@ -356,8 +378,10 @@ function classifyEvent(event, config) {
     'geofence.alarm',
     'plugin.geofence.alarm',
   ]));
+
   const geofenceSignal =
     geofenceRaw != null ||
+    geofenceAlarmFlag ||
     topic.includes('geofence') ||
     eventType.includes('geofence') ||
     intervalType.includes('geofence');
@@ -378,27 +402,46 @@ function classifyEvent(event, config) {
     'interval.event',
   ]) || '').toLowerCase();
 
-  const geofenceEnter =
-    geofenceSignal && !geofenceConfigChange && (
-      geofenceEnterByField ||
-      intervalType === 'enter' ||
-      intervalType === 'activated' ||
-      geofenceEventKind === 'geofence_enter' ||
-      eventType.includes('geofence_enter') ||
-      topic.includes('/activated')
-    );
+  const transitionByEventKind =
+    geofenceEventKind === 'geofence_enter' || geofenceEventKind === 'enter'
+      ? 'enter'
+      : ((geofenceEventKind === 'geofence_exit' || geofenceEventKind === 'exit') ? 'exit' : null);
+  const transitionByIntervalType =
+    intervalType === 'enter' || intervalType === 'activated'
+      ? 'enter'
+      : ((intervalType === 'exit' || intervalType === 'deactivated') ? 'exit' : null);
+  const transitionByEventType =
+    eventType.includes('geofence_enter')
+      ? 'enter'
+      : (eventType.includes('geofence_exit') ? 'exit' : null);
+  const transitionByTopic = topic.includes('/activated')
+    ? 'enter'
+    : (topic.includes('/deactivated') ? 'exit' : null);
 
-  const geofenceExit =
-    geofenceSignal && !geofenceConfigChange && (
-      geofenceExitByField ||
-      intervalType === 'exit' ||
-      intervalType === 'deactivated' ||
-      geofenceEventKind === 'geofence_exit' ||
-      eventType.includes('geofence_exit') ||
-      topic.includes('/deactivated')
-    );
+  const transitionCandidates = [];
+  if (geofenceEnterByField) transitionCandidates.push('enter');
+  if (geofenceExitByField) transitionCandidates.push('exit');
+  if (transitionByEventKind) transitionCandidates.push(transitionByEventKind);
+  if (transitionByIntervalType) transitionCandidates.push(transitionByIntervalType);
+  if (transitionByEventType) transitionCandidates.push(transitionByEventType);
+  if (transitionByTopic) transitionCandidates.push(transitionByTopic);
 
-  const geofenceAlarm = geofenceAlarmFlag || geofenceEnter || geofenceExit;
+  const hasEnterSignal = transitionCandidates.includes('enter');
+  const hasExitSignal = transitionCandidates.includes('exit');
+
+  const transitionDirection = hasEnterSignal && !hasExitSignal
+    ? 'enter'
+    : ((!hasEnterSignal && hasExitSignal) ? 'exit' : null);
+
+  const geofenceTransitionAmbiguous =
+    geofenceSignal &&
+    !geofenceConfigChange &&
+    transitionDirection == null &&
+    (transitionCandidates.length > 0 || geofenceAlarmFlag);
+
+  const geofenceEnter = geofenceSignal && !geofenceConfigChange && transitionDirection === 'enter';
+  const geofenceExit = geofenceSignal && !geofenceConfigChange && transitionDirection === 'exit';
+  const geofenceAlarm = geofenceEnter || geofenceExit;
 
   const communicationActive = event.reportCode === '0200';
   const tripClosed =
@@ -407,11 +450,11 @@ function classifyEvent(event, config) {
     topic.includes('calculator_interval_closed') ||
     topic.includes('/interval/closed') ||
     (eventType.includes('calculator_interval') && event.tripEndTs != null);
+
   const shouldPush =
     vibrationAlarm ||
     geofenceAlarm ||
-    (communicationActive && config.pushOnCommunicationActive) ||
-    (geofenceConfigChange && config.pushOnGeofenceConfigChange);
+    (communicationActive && config.pushOnCommunicationActive);
 
   let title = event.title;
   let body = event.body;
@@ -427,8 +470,12 @@ function classifyEvent(event, config) {
       body = `Entrada en geocerca: ${geofenceName}`;
     } else if (geofenceName && geofenceExit) {
       body = `Salida de geocerca: ${geofenceName}`;
+    } else if (geofenceEnter) {
+      body = 'Entrada en geocerca detectada';
+    } else if (geofenceExit) {
+      body = 'Salida de geocerca detectada';
     } else {
-      body = 'Se detecto un evento de geocerca';
+      body = null;
     }
     severity = 'high';
   } else if (communicationActive) {
@@ -450,6 +497,8 @@ function classifyEvent(event, config) {
     geofenceExit,
     geofenceName: geofenceName ? String(geofenceName) : null,
     geofenceConfigChange,
+    geofenceTransitionAmbiguous,
+    transitionDirection,
     communicationActive,
     tripClosed,
     shouldPush,
@@ -557,13 +606,41 @@ function resolveSourceTimestampMs(event, classification) {
     );
   }
 
+  // for geofence transitions prefer interval edges; otherwise fallback to event timestamps.
+  if (classification && classification.geofenceAlarm) {
+    const edgePriority = classification.transitionDirection === 'exit'
+      ? ['end', 'interval.end', 'payload.end', 'begin', 'interval.begin', 'payload.begin']
+      : ['begin', 'interval.begin', 'payload.begin', 'end', 'interval.end', 'payload.end'];
+
+    return (
+      parseTimestampToMs(firstDefined(raw, edgePriority)) ||
+      parseTimestampToMs(firstDefined(raw, ['ts', 'payload.ts', 'timestamp', 'payload.timestamp'])) ||
+      parseTimestampToMs(event.ts) ||
+      parseTimestampToMs(firstDefined(raw, ['server.timestamp'])) ||
+      Date.now()
+    );
+  }
+
   // for alerts/state snapshots use event time first to avoid stale interval begin values
   return (
-    parseTimestampToMs(firstDefined(raw, ['server.timestamp', 'timestamp'])) ||
+    parseTimestampToMs(firstDefined(raw, ['ts', 'payload.ts', 'timestamp', 'payload.timestamp'])) ||
     parseTimestampToMs(event.ts) ||
+    parseTimestampToMs(firstDefined(raw, ['server.timestamp'])) ||
     parseTimestampToMs(firstDefined(raw, ['end', 'interval.end', 'payload.end', 'begin', 'interval.begin', 'payload.begin'])) ||
     Date.now()
   );
+}
+
+function buildSyntheticAlertEventId(event, classification, sourceTsMs) {
+  const direction = classification.geofenceEnter ? 'enter' : (classification.geofenceExit ? 'exit' : 'none');
+  const geofenceKey = classification.geofenceName || event.geofenceId || 'unknown';
+  const normalizedGeofenceKey = String(geofenceKey)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .slice(0, 64) || 'unknown';
+  const deviceKey = String(event.deviceId || 'unknown').replace(/[^a-zA-Z0-9_-]+/g, '_');
+  const bucket = Math.floor((Number(sourceTsMs) || Date.now()) / 1000);
+  return `gf_${deviceKey}_${direction}_${normalizedGeofenceKey}_${bucket}`;
 }
 
 function buildStateSnapshot(event, classification, config) {
@@ -746,16 +823,18 @@ function buildTripDocument(event, trip) {
   return doc;
 }
 
-async function writeAlertDocument({ firestore, config, event, alertKind, alertDoc }) {
+async function writeAlertDocument({ firestore, config, eventId, alertKind, alertDoc }) {
   const collection = firestore.collection(config.alertsCollection);
 
-  if (event.eventId) {
-    const docId = `${String(event.eventId)}:${alertKind}`;
+  if (eventId) {
+    const docId = `${String(eventId)}:${alertKind}`;
     try {
       await collection.doc(docId).create(alertDoc);
+      writeLog('info', 'alert document created', { dedupe_key: docId, event_kind: alertKind });
       return { created: true, id: docId };
     } catch (error) {
       if (error && error.code === 6) {
+        writeLog('info', 'alert document deduplicated', { dedupe_key: docId, event_kind: alertKind });
         return { created: false, id: docId };
       }
       throw error;
@@ -763,6 +842,7 @@ async function writeAlertDocument({ firestore, config, event, alertKind, alertDo
   }
 
   const docRef = await collection.add(alertDoc);
+  writeLog('info', 'alert document created', { dedupe_key: docRef.id, event_kind: alertKind, synthetic_id: false });
   return { created: true, id: docRef.id };
 }
 
@@ -818,19 +898,28 @@ async function persistEvent({ firestore, config, event, classification }) {
     }
   }
 
-  if (effectiveClassification.vibrationAlarm || effectiveClassification.geofenceAlarm || effectiveClassification.geofenceConfigChange) {
+  if (effectiveClassification.geofenceTransitionAmbiguous) {
+    writeLog('warn', 'ambiguous geofence transition discarded', {
+      device_id: deviceIdStr,
+      event_id: event.eventId || null,
+      geofence_name: effectiveClassification.geofenceName || null,
+      event_type: event.eventType,
+    });
+  }
+
+  if (effectiveClassification.vibrationAlarm || effectiveClassification.geofenceAlarm) {
     const alertKind = effectiveClassification.vibrationAlarm
       ? 'vibration_alert'
       : (effectiveClassification.geofenceEnter
         ? 'geofence_enter'
-        : (effectiveClassification.geofenceExit
-          ? 'geofence_exit'
-          : (effectiveClassification.geofenceConfigChange ? 'geofence_config_change' : 'geofence_alert')));
+        : 'geofence_exit');
+
+    const persistedEventId = event.eventId || buildSyntheticAlertEventId(event, effectiveClassification, snapshot.source_ts_ms);
 
     const alertDocBase = {
       source_ts: snapshot.source_ts,
       device: { id: deviceIdStr, name: snapshot.device?.name || null },
-      event_id: event.eventId || null,
+      event_id: persistedEventId,
       event_kind: alertKind,
       severity: effectiveClassification.severity,
       checked: false,
@@ -856,7 +945,7 @@ async function persistEvent({ firestore, config, event, classification }) {
     const writeResult = await writeAlertDocument({
       firestore,
       config,
-      event,
+      eventId: persistedEventId,
       alertKind,
       alertDoc,
     });

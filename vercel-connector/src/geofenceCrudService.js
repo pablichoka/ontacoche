@@ -90,6 +90,7 @@ async function writeGeofenceConfigAlert({
   config,
   deviceId,
   geofenceName,
+  geofencePriority,
   action,
 }) {
   if (!firestore || !deviceId || !action) {
@@ -98,6 +99,12 @@ async function writeGeofenceConfigAlert({
 
   const alertsCollection = config.alertsCollection || 'device_alerts';
   const actionLower = String(action).toLowerCase();
+  const isParking = Number(geofencePriority) === 100;
+  const isLifecycleAction = actionLower === 'created' || actionLower === 'deleted';
+  if (!isParking || !isLifecycleAction) {
+    return;
+  }
+
   const name = geofenceName || 'geocerca';
 
   const message = actionLower === 'created'
@@ -414,6 +421,7 @@ async function createCircleGeofence(config, input) {
     config,
     deviceId: extractDeviceIdFromSelector(deviceSelector, config),
     geofenceName: geofence.name || name,
+    geofencePriority: geofence.priority,
     action: 'created',
   });
 
@@ -481,6 +489,7 @@ async function createGeofence(config, input) {
     config,
     deviceId: extractDeviceIdFromSelector(deviceSelector, config),
     geofenceName: geofence.name || name,
+    geofencePriority: geofence.priority,
     action: 'created',
   });
 
@@ -535,14 +544,6 @@ async function updateCircleGeofence(config, geofenceId, input) {
   const geofence = Array.isArray(updated.result) && updated.result.length > 0
     ? updated.result[0]
     : null;
-
-  await writeGeofenceConfigAlert({
-    firestore: input.firestore,
-    config,
-    deviceId: extractDeviceIdFromSelector(normalizeDeviceSelector(input, config), config),
-    geofenceName: geofence?.name || patch.name || null,
-    action: 'updated',
-  });
 
   return {
     geofence,
@@ -602,14 +603,6 @@ async function updateGeofence(config, geofenceId, input) {
     ? updated.result[0]
     : null;
 
-  await writeGeofenceConfigAlert({
-    firestore: input.firestore,
-    config,
-    deviceId: extractDeviceIdFromSelector(normalizeDeviceSelector(input, config), config),
-    geofenceName: geofence?.name || patch.name || null,
-    action: 'updated',
-  });
-
   return {
     geofence,
     calc_id: config.calcId,
@@ -623,14 +616,16 @@ async function deleteGeofence(config, geofenceId, input = {}) {
   }
 
   let geofenceName = null;
+  let geofencePriority = null;
   try {
     const existing = await flespiRequest(
       config,
       'GET',
-      `/gw/geofences/${id}?fields=id,name`,
+      `/gw/geofences/${id}?fields=id,name,priority`,
     );
     if (Array.isArray(existing.result) && existing.result.length > 0) {
       geofenceName = existing.result[0].name || null;
+      geofencePriority = existing.result[0].priority;
     }
   } catch (_) {
     geofenceName = null;
@@ -647,6 +642,7 @@ async function deleteGeofence(config, geofenceId, input = {}) {
         config,
         deviceId: extractDeviceIdFromSelector(deviceSelector, config),
         geofenceName,
+        geofencePriority,
         action: 'deleted',
       });
     }
