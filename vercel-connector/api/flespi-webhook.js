@@ -366,7 +366,6 @@ function classifyEvent(event, config) {
     eventType.includes('geofence_update') ||
     event.logCode === '0002' ||
     event.logCode === '2' ||
-    event.geofenceId != null ||
     topic.includes('/geofences/') ||
     topic.includes('flespi/log/gw/geofences');
 
@@ -380,7 +379,7 @@ function classifyEvent(event, config) {
   ]) || '').toLowerCase();
 
   const geofenceEnter =
-    geofenceSignal && (
+    geofenceSignal && !geofenceConfigChange && (
       geofenceEnterByField ||
       intervalType === 'enter' ||
       intervalType === 'activated' ||
@@ -390,7 +389,7 @@ function classifyEvent(event, config) {
     );
 
   const geofenceExit =
-    geofenceSignal && (
+    geofenceSignal && !geofenceConfigChange && (
       geofenceExitByField ||
       intervalType === 'exit' ||
       intervalType === 'deactivated' ||
@@ -409,7 +408,10 @@ function classifyEvent(event, config) {
     topic.includes('/interval/closed') ||
     (eventType.includes('calculator_interval') && event.tripEndTs != null);
   const shouldPush =
-    vibrationAlarm || geofenceAlarm || (communicationActive && config.pushOnCommunicationActive);
+    vibrationAlarm ||
+    geofenceAlarm ||
+    (communicationActive && config.pushOnCommunicationActive) ||
+    (geofenceConfigChange && config.pushOnGeofenceConfigChange);
 
   let title = event.title;
   let body = event.body;
@@ -454,6 +456,89 @@ function classifyEvent(event, config) {
     title,
     body,
     severity,
+  };
+}
+
+async function readLastGeofenceConfigChangeMs({ firestore, config, deviceId }) {
+  if (!deviceId) {
+    return null;
+  }
+
+  try {
+    const collectionName = config.deviceConfigCollection || 'device_config_state';
+    const snap = await firestore.collection(collectionName).doc(String(deviceId)).get();
+    if (!snap.exists) {
+      return null;
+    }
+    const data = snap.data() || {};
+    const raw = data.last_geofence_config_change_ts;
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      return Math.floor(raw);
+    }
+    if (typeof raw === 'string' && raw.trim() !== '') {
+      const n = Number(raw);
+      return Number.isFinite(n) ? Math.floor(n) : null;
+    }
+  } catch (error) {
+    writeLog('warn', 'failed to read geofence config change timestamp', {
+      device_id: String(deviceId),
+      error: error.message,
+    });
+  }
+
+  return null;
+}
+
+async function applyGeofenceTransitionSuppression({
+  firestore,
+  config,
+  event,
+  classification,
+  sourceTsMs,
+}) {
+  if (!classification.geofenceAlarm || !event.deviceId) {
+    return classification;
+  }
+
+  const suppressSec = Number(config.geofenceConfigChangeSuppressSec || 0);
+  if (!Number.isFinite(suppressSec) || suppressSec <= 0) {
+    return classification;
+  }
+
+  const lastConfigChangeMs = await readLastGeofenceConfigChangeMs({
+    firestore,
+    config,
+    deviceId: event.deviceId,
+  });
+  if (lastConfigChangeMs == null) {
+    return classification;
+  }
+
+  const eventMs = sourceTsMs || Date.now();
+  const deltaSec = Math.abs(eventMs - lastConfigChangeMs) / 1000;
+  if (deltaSec > suppressSec) {
+    return classification;
+  }
+
+  writeLog('info', 'geofence transition suppressed after config change', {
+    device_id: String(event.deviceId),
+    event_id: event.eventId || null,
+    source_ts_ms: eventMs,
+    last_config_change_ts_ms: lastConfigChangeMs,
+    delta_sec: deltaSec,
+  });
+
+  return {
+    ...classification,
+    geofenceAlarm: false,
+    geofenceEnter: false,
+    geofenceExit: false,
+    shouldPush: false,
+    title: 'Geocerca actualizada',
+    body: classification.geofenceName
+      ? `Se actualizo la geocerca: ${classification.geofenceName}`
+      : 'Se actualizo una geocerca',
+    severity: 'info',
   };
 }
 
@@ -691,6 +776,13 @@ async function persistEvent({ firestore, config, event, classification }) {
   const stateRef = firestore.collection(config.deviceStateCollection).doc(deviceIdStr);
 
   const snapshot = buildStateSnapshot(event, classification, config);
+  const effectiveClassification = await applyGeofenceTransitionSuppression({
+    firestore,
+    config,
+    event,
+    classification,
+    sourceTsMs: snapshot.source_ts_ms,
+  });
   const writeSnapshot = { ...snapshot };
   delete writeSnapshot.source_ts_ms;
   delete writeSnapshot.updated_at;
@@ -726,37 +818,39 @@ async function persistEvent({ firestore, config, event, classification }) {
     }
   }
 
-  if (classification.vibrationAlarm || classification.geofenceAlarm) {
-    const alertKind = classification.vibrationAlarm
+  if (effectiveClassification.vibrationAlarm || effectiveClassification.geofenceAlarm || effectiveClassification.geofenceConfigChange) {
+    const alertKind = effectiveClassification.vibrationAlarm
       ? 'vibration_alert'
-      : (classification.geofenceEnter
+      : (effectiveClassification.geofenceEnter
         ? 'geofence_enter'
-        : (classification.geofenceExit ? 'geofence_exit' : 'geofence_alert'));
+        : (effectiveClassification.geofenceExit
+          ? 'geofence_exit'
+          : (effectiveClassification.geofenceConfigChange ? 'geofence_config_change' : 'geofence_alert')));
 
     const alertDocBase = {
       source_ts: snapshot.source_ts,
       device: { id: deviceIdStr, name: snapshot.device?.name || null },
       event_id: event.eventId || null,
       event_kind: alertKind,
-      severity: classification.severity,
+      severity: effectiveClassification.severity,
       checked: false,
       checked_at: null,
       created_at: new Date().toISOString(),
     };
 
-    const alertDoc = classification.vibrationAlarm
+    const alertDoc = effectiveClassification.vibrationAlarm
       ? {
         ...alertDocBase,
         vibration_alarm: true,
-        message: classification.body || 'Se detecto vibración en el tracker',
+        message: effectiveClassification.body || 'Se detecto vibración en el tracker',
       }
       : {
         ...alertDocBase,
-        geofence_alarm: Boolean(classification.geofenceAlarm),
-        geofence_enter: Boolean(classification.geofenceEnter),
-        geofence_exit: Boolean(classification.geofenceExit),
-        geofence_name: classification.geofenceName || null,
-        message: classification.body || null,
+        geofence_alarm: Boolean(effectiveClassification.geofenceAlarm),
+        geofence_enter: Boolean(effectiveClassification.geofenceEnter),
+        geofence_exit: Boolean(effectiveClassification.geofenceExit),
+        geofence_name: effectiveClassification.geofenceName || null,
+        message: effectiveClassification.body || null,
       };
 
     const writeResult = await writeAlertDocument({
@@ -771,7 +865,7 @@ async function persistEvent({ firestore, config, event, classification }) {
       alertCreated: writeResult.created,
       dedupeKey: writeResult.id,
       eventKind: alertKind,
-      classification,
+      classification: effectiveClassification,
     };
   }
 
@@ -779,7 +873,7 @@ async function persistEvent({ firestore, config, event, classification }) {
     alertCreated: false,
     dedupeKey: null,
     eventKind: null,
-    classification,
+    classification: effectiveClassification,
   };
 }
 

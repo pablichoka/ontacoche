@@ -69,6 +69,60 @@ function normalizeDeviceSelector(body, config) {
   return `configuration.ident=${rawDeviceId}`;
 }
 
+function extractDeviceIdFromSelector(deviceSelector, config) {
+  if (!deviceSelector || typeof deviceSelector !== 'string') {
+    return config.defaultDeviceId || null;
+  }
+
+  if (deviceSelector.startsWith('configuration.ident=')) {
+    return deviceSelector.split('=')[1] || config.defaultDeviceId || null;
+  }
+
+  if (/^\d+$/.test(deviceSelector)) {
+    return deviceSelector;
+  }
+
+  return config.defaultDeviceId || null;
+}
+
+async function writeGeofenceConfigAlert({
+  firestore,
+  config,
+  deviceId,
+  geofenceName,
+  action,
+}) {
+  if (!firestore || !deviceId || !action) {
+    return;
+  }
+
+  const alertsCollection = config.alertsCollection || 'device_alerts';
+  const actionLower = String(action).toLowerCase();
+  const name = geofenceName || 'geocerca';
+
+  const message = actionLower === 'created'
+    ? `Geocerca creada: ${name}`
+    : actionLower === 'deleted'
+      ? `Geocerca eliminada: ${name}`
+      : `Geocerca actualizada: ${name}`;
+
+  await firestore.collection(alertsCollection).add({
+    source_ts: new Date().toISOString(),
+    device: { id: String(deviceId), name: null },
+    event_id: null,
+    event_kind: `geofence_config_${actionLower}`,
+    severity: 'info',
+    checked: false,
+    checked_at: null,
+    created_at: new Date().toISOString(),
+    geofence_alarm: false,
+    geofence_enter: false,
+    geofence_exit: false,
+    geofence_name: name,
+    message,
+  });
+}
+
 function normalizeCircleGeometry(input) {
   if (!input || typeof input !== 'object') {
     throw createValidationError('geometry is required');
@@ -273,7 +327,7 @@ async function updateDeviceConfigChangeTs(firestore, config, deviceSelector) {
     }
 
     if (deviceId) {
-      const collectionName = config.deviceStateCollection || 'device-state';
+      const collectionName = config.deviceConfigCollection || 'device_config_state';
       const stateRef = firestore.collection(collectionName).doc(String(deviceId));
       await stateRef.set({
         last_geofence_config_change_ts: Date.now(),
@@ -355,6 +409,13 @@ async function createCircleGeofence(config, input) {
   const geofenceId = Number(geofence.id);
   await ensureCalcAssignment(config, geofenceId);
   await ensureDeviceAssignment(config, geofenceId, deviceSelector, input.firestore);
+  await writeGeofenceConfigAlert({
+    firestore: input.firestore,
+    config,
+    deviceId: extractDeviceIdFromSelector(deviceSelector, config),
+    geofenceName: geofence.name || name,
+    action: 'created',
+  });
 
   return {
     geofence,
@@ -415,6 +476,13 @@ async function createGeofence(config, input) {
   const geofenceId = Number(geofence.id);
   await ensureCalcAssignment(config, geofenceId);
   await ensureDeviceAssignment(config, geofenceId, deviceSelector, input.firestore);
+  await writeGeofenceConfigAlert({
+    firestore: input.firestore,
+    config,
+    deviceId: extractDeviceIdFromSelector(deviceSelector, config),
+    geofenceName: geofence.name || name,
+    action: 'created',
+  });
 
   return {
     geofence,
@@ -467,6 +535,14 @@ async function updateCircleGeofence(config, geofenceId, input) {
   const geofence = Array.isArray(updated.result) && updated.result.length > 0
     ? updated.result[0]
     : null;
+
+  await writeGeofenceConfigAlert({
+    firestore: input.firestore,
+    config,
+    deviceId: extractDeviceIdFromSelector(normalizeDeviceSelector(input, config), config),
+    geofenceName: geofence?.name || patch.name || null,
+    action: 'updated',
+  });
 
   return {
     geofence,
@@ -526,6 +602,14 @@ async function updateGeofence(config, geofenceId, input) {
     ? updated.result[0]
     : null;
 
+  await writeGeofenceConfigAlert({
+    firestore: input.firestore,
+    config,
+    deviceId: extractDeviceIdFromSelector(normalizeDeviceSelector(input, config), config),
+    geofenceName: geofence?.name || patch.name || null,
+    action: 'updated',
+  });
+
   return {
     geofence,
     calc_id: config.calcId,
@@ -538,12 +622,33 @@ async function deleteGeofence(config, geofenceId, input = {}) {
     throw createValidationError('invalid geofence id');
   }
 
+  let geofenceName = null;
+  try {
+    const existing = await flespiRequest(
+      config,
+      'GET',
+      `/gw/geofences/${id}?fields=id,name`,
+    );
+    if (Array.isArray(existing.result) && existing.result.length > 0) {
+      geofenceName = existing.result[0].name || null;
+    }
+  } catch (_) {
+    geofenceName = null;
+  }
+
   await flespiRequest(config, 'DELETE', `/gw/geofences/${id}`);
   
   if (input.firestore) {
     const deviceSelector = normalizeDeviceSelector(input, config);
     if (deviceSelector) {
       await updateDeviceConfigChangeTs(input.firestore, config, deviceSelector);
+      await writeGeofenceConfigAlert({
+        firestore: input.firestore,
+        config,
+        deviceId: extractDeviceIdFromSelector(deviceSelector, config),
+        geofenceName,
+        action: 'deleted',
+      });
     }
   }
 

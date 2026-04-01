@@ -58,6 +58,9 @@ Geofence CRUD endpoints (phase 1 circles):
 - `FLESPI_TOKEN`: server-side flespi token used by geofence CRUD handlers
 - `FLESPI_GEOFENCE_CALC_ID`: calculator id that must include all managed geofences
 - `FLESPI_BASE_URL`: optional, defaults to `https://flespi.io`
+- `DEVICE_CONFIG_COLLECTION`: collection for geofence config metadata timestamps. default: `device_config_state`
+- `GEOFENCE_CONFIG_CHANGE_SUPPRESS_SEC`: suppress transition alerts close to geofence CRUD changes. default: `90`
+- `PUSH_ON_GEOFENCE_CONFIG_CHANGE`: enable push for geofence config-change events. default: `true`
 
 ## firestore token model
 
