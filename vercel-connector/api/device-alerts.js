@@ -131,12 +131,16 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true, device_id: deviceId, deleted });
     }
 
-    // Sort by `source_ts` (ISO) descending in memory and apply requested limit
+    // Sort by event time descending with fallback to created_at, then apply limit.
+    const asTimeMs = (value) => {
+      const parsed = Date.parse(String(value || ''));
+      return Number.isNaN(parsed) ? 0 : parsed;
+    };
+
     alerts = alerts
-      .filter((a) => a && a.source_ts)
       .sort((x, y) => {
-        const tx = Date.parse(String(x.source_ts) || '') || 0;
-        const ty = Date.parse(String(y.source_ts) || '') || 0;
+        const tx = asTimeMs(x.source_ts) || asTimeMs(x.created_at);
+        const ty = asTimeMs(y.source_ts) || asTimeMs(y.created_at);
         return ty - tx;
       })
       .slice(0, limit);

@@ -339,7 +339,6 @@ function classifyEvent(event, config) {
   const eventType = String(event.eventType || '').toLowerCase();
   const topic = String(firstDefined(raw, ['topic', 'event.topic']) || '').toLowerCase();
   const intervalType = String(firstDefined(raw, ['type', 'interval.type', 'geofence.event']) || '').toLowerCase();
-  const messageText = String(firstDefined(raw, ['message', 'body']) || event.body || '').toLowerCase();
   const geofenceRaw = firstDefined(raw, [
     'geofence',
     'geofence.name',
@@ -352,11 +351,6 @@ function classifyEvent(event, config) {
     ? (firstDefined(geofenceRaw, ['name', 'title', 'id']) || null)
     : geofenceRaw;
 
-  const topicActivated = topic.includes('/activated') && !topic.includes('/deactivated');
-  const eventActivated = eventType.includes('activated') && !eventType.includes('deactivated');
-  const topicDeactivated = topic.includes('/deactivated');
-  const eventDeactivated = eventType.includes('deactivated');
-  const geofenceStatusValue = firstDefined(raw, ['plugin.geofence.status', 'geofence.status']);
   const geofenceAlarmFlag = asBoolean(firstDefined(raw, [
     'geofence_alarm',
     'geofence.alarm',
@@ -364,7 +358,6 @@ function classifyEvent(event, config) {
   ]));
   const geofenceSignal =
     geofenceRaw != null ||
-    geofenceStatusValue != null ||
     topic.includes('geofence') ||
     eventType.includes('geofence') ||
     intervalType.includes('geofence');
@@ -377,33 +370,34 @@ function classifyEvent(event, config) {
     topic.includes('/geofences/') ||
     topic.includes('flespi/log/gw/geofences');
 
-  const hasExplicitIntervalDirection =
-    intervalType === 'enter' || intervalType === 'exit';
+  const geofenceEnterByField = asBoolean(explicitEnterGeofence);
+  const geofenceExitByField = asBoolean(explicitExitGeofence);
 
-  const geofenceEnterByField = explicitEnterGeofence != null && explicitEnterGeofence !== 'null';
-  const geofenceExitByField = explicitExitGeofence != null && explicitExitGeofence !== 'null';
+  const geofenceEventKind = String(firstDefined(raw, [
+    'event_kind',
+    'payload.event_kind',
+    'interval.event',
+  ]) || '').toLowerCase();
 
   const geofenceEnter =
-    geofenceEnterByField ||
-    (!geofenceExitByField && intervalType === 'enter') ||
-    (!hasExplicitIntervalDirection && (
+    geofenceSignal && (
+      geofenceEnterByField ||
+      intervalType === 'enter' ||
       intervalType === 'activated' ||
+      geofenceEventKind === 'geofence_enter' ||
       eventType.includes('geofence_enter') ||
-      (geofenceSignal && (messageText.includes('entrada') || messageText.includes(' enter'))) ||
-      eventActivated ||
-      topicActivated
-    ));
+      topic.includes('/activated')
+    );
 
   const geofenceExit =
-    geofenceExitByField ||
-    (!geofenceEnterByField && intervalType === 'exit') ||
-    (!hasExplicitIntervalDirection && (
+    geofenceSignal && (
+      geofenceExitByField ||
+      intervalType === 'exit' ||
       intervalType === 'deactivated' ||
+      geofenceEventKind === 'geofence_exit' ||
       eventType.includes('geofence_exit') ||
-      (geofenceSignal && (messageText.includes('salida') || messageText.includes(' exit'))) ||
-      eventDeactivated ||
-      topicDeactivated
-    ));
+      topic.includes('/deactivated')
+    );
 
   const geofenceAlarm = geofenceAlarmFlag || geofenceEnter || geofenceExit;
 
@@ -456,20 +450,40 @@ function classifyEvent(event, config) {
     geofenceConfigChange,
     communicationActive,
     tripClosed,
-    shouldPush: shouldPush || geofenceConfigChange,
+    shouldPush,
     title,
     body,
     severity,
   };
 }
 
+function resolveSourceTimestampMs(event, classification) {
+  const raw = event.raw || {};
+
+  // for closed intervals (trips) we want the interval edge, not webhook receive time
+  if (classification && classification.tripClosed) {
+    return (
+      parseTimestampToMs(firstDefined(raw, ['end', 'interval.end', 'payload.end', 'begin', 'interval.begin', 'payload.begin'])) ||
+      parseTimestampToMs(event.tripEndTs) ||
+      parseTimestampToMs(event.tripBeginTs) ||
+      parseTimestampToMs(firstDefined(raw, ['server.timestamp', 'timestamp'])) ||
+      parseTimestampToMs(event.ts) ||
+      Date.now()
+    );
+  }
+
+  // for alerts/state snapshots use event time first to avoid stale interval begin values
+  return (
+    parseTimestampToMs(firstDefined(raw, ['server.timestamp', 'timestamp'])) ||
+    parseTimestampToMs(event.ts) ||
+    parseTimestampToMs(firstDefined(raw, ['end', 'interval.end', 'payload.end', 'begin', 'interval.begin', 'payload.begin'])) ||
+    Date.now()
+  );
+}
+
 function buildStateSnapshot(event, classification, config) {
   const raw = event.raw || {};
-  // Extraemos el end / begin nativo del intervalo para no usar la hora del recálculo de flespi
-  const sourceTsMs =
-    parseTimestampToMs(firstDefined(raw, ['end', 'begin', 'server.timestamp', 'timestamp'])) ||
-    parseTimestampToMs(event.ts) ||
-    Date.now();
+  const sourceTsMs = resolveSourceTimestampMs(event, classification);
   const batteryLevel = firstDefined(raw, ['battery.level', 'battery_level']);
   const batteryVoltage = firstDefined(raw, ['battery.voltage', 'battery_voltage', 'battery.v']);
   const position = {
@@ -682,35 +696,6 @@ async function persistEvent({ firestore, config, event, classification }) {
       alertCreated: writeResult.created,
       dedupeKey: writeResult.id,
       eventKind: alertKind,
-      classification,
-    };
-  }
-
-  if (classification.geofenceConfigChange) {
-    const geofenceConfigAlert = {
-      ...snapshot,
-      geofence_id: event.geofenceId || null,
-      event_id: event.eventId || null,
-      event_kind: 'geofence_config_change',
-      message: classification.body,
-      severity: classification.severity,
-      checked: true,
-      checked_at: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-    };
-
-    const writeResult = await writeAlertDocument({
-      firestore,
-      config,
-      event,
-      alertKind: 'geofence_config_change',
-      alertDoc: geofenceConfigAlert,
-    });
-
-    return {
-      alertCreated: writeResult.created,
-      dedupeKey: writeResult.id,
-      eventKind: 'geofence_config_change',
       classification,
     };
   }

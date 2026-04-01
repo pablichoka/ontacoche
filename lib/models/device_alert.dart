@@ -70,13 +70,11 @@ class DeviceAlert {
         eventKind.contains('vibration')) {
       type = DeviceAlertType.vibration;
     } else if (eventKind == 'geofence_enter' ||
-        eventKind == 'enter' ||
-        eventKind.contains('activated')) {
+        eventKind == 'enter') {
       type = DeviceAlertType.geofence;
       isEntering = true;
     } else if (eventKind == 'geofence_exit' ||
-        eventKind == 'exit' ||
-        eventKind.contains('deactivated')) {
+        eventKind == 'exit') {
       type = DeviceAlertType.geofence;
       isEntering = false;
     } else if (vibrationAlarm) {
@@ -173,7 +171,12 @@ class DeviceAlert {
       return sourceTs;
     }
 
-    // Only `source_ts` is considered authoritative; fall back to now if absent
+    final DateTime? createdAt = Parsers.fromUnknown(json['created_at']);
+    if (createdAt != null) {
+      return createdAt;
+    }
+
+    // fallback when backend misses temporal fields
     return Parsers.now();
   }
 
