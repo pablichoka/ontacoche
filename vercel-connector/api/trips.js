@@ -45,6 +45,8 @@ module.exports = async function handler(req, res) {
   const deviceId = (req.query.device_id || req.query.deviceId || '').toString().trim();
   const limitRaw = req.query.limit || '20';
   const limit = Math.min(Math.max(parseInt(limitRaw, 10) || 20, 1), 200);
+  const startedFrom = (req.query.started_from || req.query.startedFrom || '').toString().trim();
+  const startedTo = (req.query.started_to || req.query.startedTo || '').toString().trim();
 
   if (!deviceId) {
     return res.status(400).json({ ok: false, error: 'device_id is required' });
@@ -52,10 +54,10 @@ module.exports = async function handler(req, res) {
 
   try {
     const firestore = getFirestore(config);
-    const collectionName = config.tripsCollection || 'trips';
+    const collectionName = config.tripsCollection || 'device_trips';
     if (method === 'DELETE') {
       // delete all trips for deviceId in batches
-      const q = firestore.collection(collectionName).where('deviceIdent', '==', deviceId).limit(1000);
+      const q = firestore.collection(collectionName).where('deviceId', '==', deviceId).limit(1000);
       const snapshot = await q.get();
       const docs = snapshot.docs;
       let deleted = 0;
@@ -78,7 +80,18 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true, device_id: deviceId, deleted });
     }
 
-    const q = firestore.collection(collectionName).where('deviceIdent', '==', deviceId).limit(limit);
+    let q = firestore
+      .collection(collectionName)
+      .where('deviceId', '==', deviceId);
+
+    if (startedFrom) {
+      q = q.where('startedAt', '>=', startedFrom);
+    }
+    if (startedTo) {
+      q = q.where('startedAt', '<=', startedTo);
+    }
+
+    q = q.orderBy('startedAt', 'desc').limit(limit);
     const snapshot = await q.get();
 
     const rows = snapshot.docs.map((doc) => {

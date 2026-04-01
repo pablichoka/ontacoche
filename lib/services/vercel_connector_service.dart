@@ -261,10 +261,21 @@ class VercelConnectorService {
   Future<List<Map<String, dynamic>>> getTripsRaw(
     String deviceId, {
     int limit = 20,
+    DateTime? startedFrom,
+    DateTime? startedTo,
   }) async {
-    final Uri uri = Uri.parse(
-      '$baseUrl/api/trips?device_id=$deviceId&limit=$limit',
-    );
+    final Map<String, String> query = <String, String>{
+      'device_id': deviceId,
+      'limit': '$limit',
+    };
+    if (startedFrom != null) {
+      query['started_from'] = startedFrom.toUtc().toIso8601String();
+    }
+    if (startedTo != null) {
+      query['started_to'] = startedTo.toUtc().toIso8601String();
+    }
+
+    final Uri uri = Uri.parse('$baseUrl/api/trips').replace(queryParameters: query);
     final Map<String, String> headers = _readHeaders();
 
     final http.Response response = await _client.get(uri, headers: headers);

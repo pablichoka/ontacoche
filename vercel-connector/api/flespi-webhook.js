@@ -1,15 +1,11 @@
 const { readConfig } = require('../src/config');
 const { getFirestore, getMessaging } = require('../src/firebaseAdmin');
-const admin = require('firebase-admin');
 const {
   deactivateInvalidTokens,
   getActiveTokens,
 } = require('../src/tokenRepository');
 
 const { DateTime } = require('luxon');
-
-const VIBRATION_DEDUPE_WINDOW_SECONDS = 45;
-const GEOFENCE_DEDUPE_WINDOW_SECONDS = 30;
 
 function getNestedValue(source, key) {
   if (!source || typeof source !== 'object' || !key) {
@@ -129,16 +125,6 @@ function formatIsoInZone(ms, zone) {
   }
 }
 
-function makeStableId(input) {
-  let hash = 0;
-  for (let i = 0; i < input.length; i += 1) {
-    hash = ((hash << 5) - hash) + input.charCodeAt(i);
-    hash |= 0;
-  }
-
-  return `k${Math.abs(hash).toString(36)}`;
-}
-
 function getRequestId(req) {
   return req.headers['x-request-id'] || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -247,6 +233,8 @@ function normalizeEvent(body) {
     body: firstDefined(root, ['body', 'message', 'notification.body']) || firstDefined(payload, ['body', 'message']) || 'Se detecto una alerta en el tracker',
     severity: firstDefined(root, ['severity']) || firstDefined(payload, ['severity']) || 'info',
     ts: firstDefined(root, ['ts', 'timestamp', 'server.timestamp']) || firstDefined(payload, ['ts', 'timestamp', 'server.timestamp']) || Date.now(),
+    tripBeginTs: firstDefined(root, ['begin', 'interval.begin', 'payload.begin']) || firstDefined(payload, ['begin', 'interval.begin']) || null,
+    tripEndTs: firstDefined(root, ['end', 'interval.end', 'payload.end']) || firstDefined(payload, ['end', 'interval.end']) || null,
     raw: normalizedRaw,
   };
 }
@@ -420,6 +408,12 @@ function classifyEvent(event, config) {
   const geofenceAlarm = geofenceAlarmFlag || geofenceEnter || geofenceExit;
 
   const communicationActive = event.reportCode === '0200';
+  const tripClosed =
+    eventType === 'calculator_interval_closed' ||
+    eventType === 'interval_closed' ||
+    topic.includes('calculator_interval_closed') ||
+    topic.includes('/interval/closed') ||
+    (eventType.includes('calculator_interval') && event.tripEndTs != null);
   const shouldPush =
     vibrationAlarm || geofenceAlarm || (communicationActive && config.pushOnCommunicationActive);
 
@@ -461,6 +455,7 @@ function classifyEvent(event, config) {
     geofenceName: geofenceName ? String(geofenceName) : null,
     geofenceConfigChange,
     communicationActive,
+    tripClosed,
     shouldPush: shouldPush || geofenceConfigChange,
     title,
     body,
@@ -504,64 +499,97 @@ function buildStateSnapshot(event, classification, config) {
   return snapshot;
 }
 
-async function queryFlespiInterval(config, deviceSelector, geofenceName, begin) {
-  try {
-    if (!config.flespiToken || !config.flespiCalcId) return null;
-
-    const filterExpr = `geofence=="${geofenceName}" && begin==${begin}`;
-    const data = encodeURIComponent(JSON.stringify({ filter: filterExpr, count: 1, fields: 'id,begin,end,duration' }));
-
-    const devicePath = String(deviceSelector);
-    const url = `${config.flespiBaseUrl.replace(/\/$/, '')}/gw/calcs/${config.flespiCalcId}/devices/${devicePath}/intervals?data=${data}`;
-
-    const resp = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `FlespiToken ${config.flespiToken}`,
-        Accept: 'application/json',
-      },
-    });
-
-    if (!resp.ok) return null;
-    const body = await resp.json();
-    if (!body || !body.result || !Array.isArray(body.result) || body.result.length === 0) return null;
-    return body.result[0];
-  } catch (e) {
-    writeLog('error', 'flespi query failed', { error: e.message });
+function normalizeNumber(value) {
+  if (value == null || value === '') {
     return null;
   }
+
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
 }
 
-async function queryFlespiIntervalsByBeginRange(config, deviceSelector, beginFrom, beginTo, typeFilter) {
-  try {
-    if (!config.flespiToken || !config.flespiCalcId) return null;
-
-    const filterParts = [];
-    if (typeFilter) filterParts.push(`type=="${typeFilter}"`);
-    if (beginFrom != null) filterParts.push(`begin>=${beginFrom}`);
-    if (beginTo != null) filterParts.push(`begin<=${beginTo}`);
-    const filterExpr = filterParts.join(' && ');
-    const data = encodeURIComponent(JSON.stringify({ filter: filterExpr, count: 5, fields: 'id,begin,end,duration,geofence,type' }));
-
-    const devicePath = String(deviceSelector);
-    const url = `${config.flespiBaseUrl.replace(/\/$/, '')}/gw/calcs/${config.flespiCalcId}/devices/${devicePath}/intervals?data=${data}`;
-
-    const resp = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `FlespiToken ${config.flespiToken}`,
-        Accept: 'application/json',
-      },
-    });
-
-    if (!resp.ok) return null;
-    const body = await resp.json();
-    if (!body || !body.result || !Array.isArray(body.result) || body.result.length === 0) return null;
-    return body.result;
-  } catch (e) {
-    writeLog('error', 'flespi range query failed', { error: e.message });
+function parseTripPayload(event, classification) {
+  if (!classification.tripClosed) {
     return null;
   }
+
+  const raw = event.raw || {};
+  const beginMs = parseTimestampToMs(firstDefined(raw, ['begin', 'interval.begin', 'payload.begin']) || event.tripBeginTs);
+  const endMs = parseTimestampToMs(firstDefined(raw, ['end', 'interval.end', 'payload.end']) || event.tripEndTs);
+
+  if (beginMs == null || endMs == null || endMs < beginMs) {
+    return null;
+  }
+
+  const distanceM =
+    normalizeNumber(firstDefined(raw, [
+      'distance',
+      'distance_m',
+      'mileage',
+      'interval.distance',
+      'payload.distance',
+      'summary.distance',
+    ])) || 0;
+  const maxSpeedKph =
+    normalizeNumber(firstDefined(raw, [
+      'max_speed',
+      'max_speed_kph',
+      'max.speed',
+      'interval.max_speed',
+      'payload.max_speed',
+      'summary.max_speed',
+    ])) || 0;
+
+  const polylineEncoded = firstDefined(raw, [
+    'polyline',
+    'polyline_encoded',
+    'interval.polyline',
+    'route.polyline',
+    'payload.polyline',
+  ]);
+
+  return {
+    beginMs,
+    endMs,
+    distanceM,
+    maxSpeedKph,
+    polylineEncoded: typeof polylineEncoded === 'string' ? polylineEncoded : null,
+  };
+}
+
+function buildTripDocument(event, trip) {
+  return {
+    deviceId: String(event.deviceId),
+    startedAt: toIsoFromMs(trip.beginMs),
+    endedAt: toIsoFromMs(trip.endMs),
+    durationSec: Math.max(0, Math.floor((trip.endMs - trip.beginMs) / 1000)),
+    distanceM: trip.distanceM,
+    maxSpeedKph: trip.maxSpeedKph,
+    polylineEncoded: trip.polylineEncoded,
+    source: 'flespi_calculator',
+    eventId: event.eventId || null,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+async function writeAlertDocument({ firestore, config, event, alertKind, alertDoc }) {
+  const collection = firestore.collection(config.alertsCollection);
+
+  if (event.eventId) {
+    const docId = `${String(event.eventId)}:${alertKind}`;
+    try {
+      await collection.doc(docId).create(alertDoc);
+      return { created: true, id: docId };
+    } catch (error) {
+      if (error && error.code === 6) {
+        return { created: false, id: docId };
+      }
+      throw error;
+    }
+  }
+
+  const docRef = await collection.add(alertDoc);
+  return { created: true, id: docRef.id };
 }
 
 async function persistEvent({ firestore, config, event, classification }) {
@@ -578,113 +606,18 @@ async function persistEvent({ firestore, config, event, classification }) {
   delete writeSnapshot.source_ts_ms;
   delete writeSnapshot.updated_at;
 
-  // TAREA 1: FILTRADO ESTRICTO DE HISTORIAL (Evitar tramas basura)
   const isPeriodicPos = event.reportCode === '0200';
   const hasValidGPS = snapshot.position.latitude != null && snapshot.position.longitude != null;
 
   if (config.storeStateHistory && isPeriodicPos && hasValidGPS) {
-    // Ensure history and last-state are written together so `device_last_state`
-    // always matches the last entry in `device_state_history`.
     const historyCol = firestore.collection(config.stateHistoryCollection);
     const historyDocRef = historyCol.doc();
     const batch = firestore.batch();
     batch.set(historyDocRef, writeSnapshot);
     batch.set(stateRef, writeSnapshot);
     await batch.commit();
-
-    // TAREA 2: MOTOR DE ESTADO DE TRIPS
-    try {
-      const tripsColl = firestore.collection(config.tripsCollection || 'trips');
-
-      // Paso 2.1: Buscar Trip Activo
-      const activeTripQuery = await tripsColl
-        .where('device_id', '==', deviceIdStr)
-        .where('status', '==', 'in_progress')
-        .limit(1)
-        .get();
-
-      if (activeTripQuery.empty) {
-        // Paso 2.2: Lógica si NO hay Trip Activo (Evaluación de Inicio)
-        const historyQuery = await firestore.collection(config.stateHistoryCollection)
-          .where('device.id', '==', deviceIdStr)
-          .orderBy('source_ts', 'desc')
-          .limit(6)
-          .get();
-
-        if (historyQuery.size === 6) {
-          const points = historyQuery.docs.map(doc => doc.data()).reverse(); // Orden cronologico
-          const latestPoint = points[points.length - 1];
-          const oldestPoint = points[0];
-
-          // Requisito 6 puntos en 5 mins
-          const latestTs = new Date(latestPoint.source_ts).getTime();
-          const oldestTs = new Date(oldestPoint.source_ts).getTime();
-
-          // CORRECCIÓN: Validar que existe movimiento real en estos 6 puntos
-          const hasMovement = points.some(p => (p.position?.speed || 0) >= 1);
-
-          if (latestTs - oldestTs <= 300000 && hasMovement) {
-            await tripsColl.add({
-              device_id: deviceIdStr,
-              status: 'in_progress',
-              start_ts: oldestPoint.source_ts,
-              end_ts: null,
-              points: points
-            });
-          }
-        }
-      } else {
-        // Paso 2.3: Lógica si SÍ hay un Trip Activo (Actualización y Evaluación de Cierre)
-        const tripDoc = activeTripQuery.docs[0];
-        const tripData = tripDoc.data();
-        const updatedPoints = [...(tripData.points || []), writeSnapshot];
-
-        // Evaluar condición de cierre (Parada detectada)
-        if (updatedPoints.length >= 4) {
-          const last4 = updatedPoints.slice(-4);
-          const isStopped = last4.every(p => (p.position?.speed || 0) < 1);
-
-          if (isStopped) {
-            const finalPoints = updatedPoints.slice(0, -4);
-            
-            // CORRECCIÓN: Si el viaje resultante es demasiado corto o un falso positivo, borrarlo
-            if (finalPoints.length < 5) {
-              await tripDoc.ref.delete();
-            } else {
-              const endTs = finalPoints[finalPoints.length - 1].source_ts;
-              await tripDoc.ref.update({
-                status: 'completed',
-                end_ts: endTs,
-                points: finalPoints
-              });
-            }
-          } else {
-            // Actualizar añadiendo el nuevo punto si no hay parada
-            await tripDoc.ref.update({
-              points: admin.firestore.FieldValue.arrayUnion(writeSnapshot)
-            });
-          }
-        } else {
-          await tripDoc.ref.update({
-            points: admin.firestore.FieldValue.arrayUnion(writeSnapshot)
-          });
-        }
-      }
-    } catch (tripError) {
-      writeLog('error', 'Error en motor de trips', { 
-        deviceId: deviceIdStr, 
-        error: tripError.message 
-      });
-      // Continuamos para no bloquear alertas
-    }
-  } else if (config.storeStateHistory && (!isPeriodicPos || !hasValidGPS)) {
-    // No actualizamos `device_last_state` si no estamos almacenando historial válido.
-    // Esto preserva la invariante: `device_last_state` == última entrada de `device_state_history`.
-    // Seguimos sin evaluar trips para tramas no periódicas o sin GPS válido.
   }
 
-  // Si el sistema no almacena historial, mantenemos el comportamiento previo
-  // y actualizamos únicamente `device_last_state`.
   if (!config.storeStateHistory) {
     try {
       await stateRef.set(writeSnapshot);
@@ -693,69 +626,33 @@ async function persistEvent({ firestore, config, event, classification }) {
     }
   }
 
-  // LOGICA DE ALERTAS Y GEOCERCAS (Se mantiene intacta)
+  const tripPayload = parseTripPayload(event, classification);
+  if (tripPayload) {
+    const tripsCollection = config.tripsCollection || 'device_trips';
+    const tripDoc = buildTripDocument(event, tripPayload);
+    if (event.eventId) {
+      await firestore.collection(tripsCollection).doc(String(event.eventId)).set(tripDoc, { merge: true });
+    } else {
+      await firestore.collection(tripsCollection).add(tripDoc);
+    }
+  }
+
   if (classification.vibrationAlarm || classification.geofenceAlarm) {
-    const dedupeBucket = classification.vibrationAlarm
-      ? Math.floor(snapshot.source_ts_ms / (VIBRATION_DEDUPE_WINDOW_SECONDS * 1000))
-      : Math.floor(snapshot.source_ts_ms / (GEOFENCE_DEDUPE_WINDOW_SECONDS * 1000));
-
-    // anti-fantasma removed: no longer consultamos MCP para filtrar eventos por duración.
-    // Aceptamos los eventos de geocerca tal cual y creamos alertas sin la lógica de intervalos previa.
-
     const alertKind = classification.vibrationAlarm
       ? 'vibration_alert'
       : (classification.geofenceEnter
         ? 'geofence_enter'
         : (classification.geofenceExit ? 'geofence_exit' : 'geofence_alert'));
 
-    const geofenceIntervalId =
-      classification.geofenceAlarm && event.eventId != null
-        ? String(event.eventId)
-        : null;
-
-    const geofenceTopic = String(firstDefined(raw, ['topic', 'event.topic']) || '').toLowerCase();
-    const geofenceIntervalEnd = firstDefined(raw, ['end', 'interval.end']);
-
-    const dedupeKey = geofenceIntervalId
-      ? makeStableId([
-        'gf',
-        deviceIdStr,
-        geofenceIntervalId,
-        alertKind,
-        classification.geofenceName || '',
-        geofenceTopic.includes('/updated') && geofenceIntervalEnd != null
-          ? String(geofenceIntervalEnd)
-          : '',
-      ].join('|'))
-      : makeStableId([
-        deviceIdStr,
-        alertKind,
-        classification.geofenceName || '',
-        String(dedupeBucket),
-      ].join('|'));
-      
-    const alertRef = firestore.collection(config.alertsCollection).doc(dedupeKey);
-    const existing = await alertRef.get();
-
-    if (existing.exists) {
-      writeLog('info', 'Ignorando alerta duplicada/recalculada', { dedupeKey, event_id: event.eventId });
-      return {
-        alertCreated: false,
-        dedupeKey,
-        eventKind: alertKind,
-        classification,
-      };
-    }
-
     const alertDocBase = {
       source_ts: snapshot.source_ts,
       device: { id: deviceIdStr, name: snapshot.device?.name || null },
-      dedupe_key: dedupeKey,
       event_id: event.eventId || null,
       event_kind: alertKind,
       severity: classification.severity,
-      checked: false, 
+      checked: false,
       checked_at: null,
+      created_at: new Date().toISOString(),
     };
 
     const alertDoc = classification.vibrationAlarm
@@ -773,55 +670,46 @@ async function persistEvent({ firestore, config, event, classification }) {
         message: classification.body || null,
       };
 
-    await alertRef.set(alertDoc, { merge: true });
-    
-    try {
-      await alertRef.update({
-        source_ts_ms: admin.firestore.FieldValue.delete(),
-        created_at: admin.firestore.FieldValue.delete(),
-        last_seen_at: admin.firestore.FieldValue.delete(),
-      });
-    } catch (e) {
-    }
+    const writeResult = await writeAlertDocument({
+      firestore,
+      config,
+      event,
+      alertKind,
+      alertDoc,
+    });
 
     return {
-      alertCreated: true, 
-      dedupeKey,
+      alertCreated: writeResult.created,
+      dedupeKey: writeResult.id,
       eventKind: alertKind,
       classification,
     };
   }
 
   if (classification.geofenceConfigChange) {
-    const geofenceChangeId = makeStableId([
-      'gfcfg',
-      String(event.geofenceId || event.eventId || event.deviceId || 'unknown'),
-      String(event.eventType || ''),
-      String(firstDefined(raw, ['timestamp', 'server.timestamp']) || event.ts || ''),
-    ].join('|'));
-
-    const alertRef = firestore.collection(config.alertsCollection).doc(geofenceChangeId);
-    const existing = await alertRef.get();
-
-    await alertRef.set({
+    const geofenceConfigAlert = {
       ...snapshot,
       geofence_id: event.geofenceId || null,
-      dedupe_key: geofenceChangeId,
       event_id: event.eventId || null,
       event_kind: 'geofence_config_change',
       message: classification.body,
       severity: classification.severity,
-      checked: existing.exists ? Boolean(existing.data()?.checked) : true,
-      checked_at: existing.exists ? (existing.data()?.checked_at || null) : new Date().toISOString(),
-      created_at: existing.exists
-        ? (existing.data()?.created_at || new Date().toISOString())
-        : new Date().toISOString(),
-      ...(existing.exists ? {} : { last_seen_at: new Date().toISOString() }),
-    }, { merge: true });
+      checked: true,
+      checked_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+
+    const writeResult = await writeAlertDocument({
+      firestore,
+      config,
+      event,
+      alertKind: 'geofence_config_change',
+      alertDoc: geofenceConfigAlert,
+    });
 
     return {
-      alertCreated: !existing.exists,
-      dedupeKey: geofenceChangeId,
+      alertCreated: writeResult.created,
+      dedupeKey: writeResult.id,
       eventKind: 'geofence_config_change',
       classification,
     };

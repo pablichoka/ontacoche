@@ -1,12 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/trip.dart';
+import '../models/device_trip.dart';
 import '../services/vercel_connector_service.dart';
 import 'api_provider.dart';
 
-final tripsProvider = StreamProvider<List<Trip>>((Ref ref) {
+final tripsProvider = StreamProvider<List<DeviceTrip>>((Ref ref) {
   final String deviceId = ref.watch(deviceIdentProvider).trim();
-  if (deviceId.isEmpty) return Stream.value(const <Trip>[]);
+  if (deviceId.isEmpty) return Stream.value(const <DeviceTrip>[]);
 
   final VercelConnectorService service = ref.watch(vercelConnectorServiceProvider);
 
@@ -20,8 +20,8 @@ final tripsProvider = StreamProvider<List<Trip>>((Ref ref) {
     while (!disposed) {
       try {
         final List<Map<String, dynamic>> raw = await service.getTripsRaw(deviceId, limit: 50);
-        final List<Trip> trips = raw
-            .map((m) => Trip.fromFirestore(m['id'] as String? ?? '', m))
+        final List<DeviceTrip> trips = raw
+          .map((m) => DeviceTrip.fromFirestore(m['id'] as String? ?? '', m))
             .toList(growable: false);
         yield trips;
       } catch (e) {

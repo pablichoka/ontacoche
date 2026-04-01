@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/trip.dart';
+import '../models/device_trip.dart';
 import '../providers/trip_provider.dart';
 import '../providers/api_provider.dart';
 import '../theme/app_colors.dart';
-import '../utils/parsers.dart';
 import '../widgets/expressive_indicator.dart';
 import 'trip_playback_screen.dart';
 
@@ -21,7 +20,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final AsyncValue<List<Trip>> tripsState = ref.watch(tripsProvider);
+    final AsyncValue<List<DeviceTrip>> tripsState = ref.watch(tripsProvider);
 
     return ColoredBox(
       color: AppColors.background,
@@ -56,7 +55,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                     ),
                   ),
                   tripsState.when(
-                    data: (List<Trip> trips) {
+                    data: (List<DeviceTrip> trips) {
                       if (trips.isEmpty) {
                         return const SliverFillRemaining(
                           hasScrollBody: false,
@@ -217,19 +216,18 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 class _TripCard extends StatelessWidget {
   const _TripCard({required this.trip});
 
-  final Trip trip;
+  final DeviceTrip trip;
 
   @override
   Widget build(BuildContext context) {
-    final String start = _formatTime(trip.startTime);
-    final String end = _formatTime(trip.endTime);
-    final String duration = trip.activeDurationMinutes != null
-        ? '${trip.activeDurationMinutes} min'
-        : Parsers.formatRelativeTimestamp(trip.startTime);
+    final String start = _formatTime(trip.startedAt);
+    final String end = _formatTime(trip.endedAt);
+    final String duration = '${trip.durationMinutes} min';
+    final String distance = '${(trip.distanceM / 1000).toStringAsFixed(2)} km';
 
     return GestureDetector(
       onTap: () {
-        if (trip.routePoints.length >= 2) {
+        if (trip.pathPoints.length >= 2) {
           Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => TripPlaybackScreen(trip: trip),
@@ -273,7 +271,7 @@ class _TripCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    duration,
+                    '$duration · $distance',
                     style: Theme.of(
                       context,
                     ).textTheme.bodySmall?.copyWith(color: AppColors.muted),
@@ -281,7 +279,7 @@ class _TripCard extends StatelessWidget {
                 ],
               ),
             ),
-            if (trip.routePoints.length >= 2)
+            if (trip.pathPoints.length >= 2)
               const Icon(
                 Icons.play_circle_outline_rounded,
                 color: AppColors.brand,
