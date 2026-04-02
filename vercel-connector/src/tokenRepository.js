@@ -5,31 +5,73 @@ const TOKEN_INVALID_ERRORS = new Set([
 
 async function getActiveTokens({ firestore, collectionName, deviceId, userId }) {
   const tokenMap = new Map();
+  const collection = firestore.collection(collectionName);
+
+  async function safeQuery(buildQuery, label) {
+    try {
+      return await buildQuery().get();
+    } catch (error) {
+      console.error(JSON.stringify({
+        level: 'warn',
+        message: 'token query failed',
+        query: label,
+        error: error.message,
+        code: error.code || null,
+        ts: new Date().toISOString(),
+      }));
+      return null;
+    }
+  }
 
   if (deviceId) {
-    const byDeviceSnapshot = await firestore
-      .collection(collectionName)
-      .where('device_id', '==', String(deviceId))
-      .where('active', '==', true)
-      .get();
+    const byDeviceSnapshot = await safeQuery(
+      () => collection
+        .where('device_id', '==', String(deviceId))
+        .where('active', '==', true),
+      'device_id:string+active',
+    );
 
-    byDeviceSnapshot.forEach((doc) => {
-      const data = doc.data();
-      const token = data.token || doc.id;
-      if (token) {
-        tokenMap.set(token, doc.ref);
-      }
-    });
+    if (byDeviceSnapshot) {
+      byDeviceSnapshot.forEach((doc) => {
+        const data = doc.data();
+        const token = data.token || doc.id;
+        if (token) {
+          tokenMap.set(token, doc.ref);
+        }
+      });
+    }
 
     const numericDeviceId = Number.parseInt(String(deviceId), 10);
     if (Number.isFinite(numericDeviceId)) {
-      const byNumericDeviceSnapshot = await firestore
-        .collection(collectionName)
-        .where('device_id', '==', numericDeviceId)
-        .where('active', '==', true)
-        .get();
+      const byNumericDeviceSnapshot = await safeQuery(
+        () => collection
+          .where('device_id', '==', numericDeviceId)
+          .where('active', '==', true),
+        'device_id:number+active',
+      );
 
-      byNumericDeviceSnapshot.forEach((doc) => {
+      if (byNumericDeviceSnapshot) {
+        byNumericDeviceSnapshot.forEach((doc) => {
+          const data = doc.data();
+          const token = data.token || doc.id;
+          if (token) {
+            tokenMap.set(token, doc.ref);
+          }
+        });
+      }
+    }
+  }
+
+  if (userId) {
+    const byUserSnapshot = await safeQuery(
+      () => collection
+        .where('user_id', '==', String(userId))
+        .where('active', '==', true),
+      'user_id+active',
+    );
+
+    if (byUserSnapshot) {
+      byUserSnapshot.forEach((doc) => {
         const data = doc.data();
         const token = data.token || doc.id;
         if (token) {
@@ -39,36 +81,23 @@ async function getActiveTokens({ firestore, collectionName, deviceId, userId }) 
     }
   }
 
-  if (userId) {
-    const byUserSnapshot = await firestore
-      .collection(collectionName)
-      .where('user_id', '==', String(userId))
-      .where('active', '==', true)
-      .get();
-
-    byUserSnapshot.forEach((doc) => {
-      const data = doc.data();
-      const token = data.token || doc.id;
-      if (token) {
-        tokenMap.set(token, doc.ref);
-      }
-    });
-  }
-
   if (tokenMap.size === 0) {
-    const fallbackSnapshot = await firestore
-      .collection(collectionName)
-      .where('active', '==', true)
-      .limit(20)
-      .get();
+    const fallbackSnapshot = await safeQuery(
+      () => collection
+        .where('active', '==', true)
+        .limit(20),
+      'fallback_active_only',
+    );
 
-    fallbackSnapshot.forEach((doc) => {
-      const data = doc.data();
-      const token = data.token || doc.id;
-      if (token) {
-        tokenMap.set(token, doc.ref);
-      }
-    });
+    if (fallbackSnapshot) {
+      fallbackSnapshot.forEach((doc) => {
+        const data = doc.data();
+        const token = data.token || doc.id;
+        if (token) {
+          tokenMap.set(token, doc.ref);
+        }
+      });
+    }
   }
 
   return tokenMap;

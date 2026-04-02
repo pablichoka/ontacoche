@@ -908,12 +908,23 @@ async function persistEvent({ firestore, config, event, classification }) {
     }
   }
 
-  await processMovementTrip({
-    firestore,
-    config,
-    event,
-    sourceTsMs: snapshot.source_ts_ms,
-  });
+  if (String(event.eventType || '').toLowerCase() === 'tracker_telemetry') {
+    try {
+      await processMovementTrip({
+        firestore,
+        config,
+        event,
+        sourceTsMs: snapshot.source_ts_ms,
+      });
+    } catch (error) {
+      writeLog('error', 'trip runtime processing failed', {
+        device_id: deviceIdStr,
+        event_id: event.eventId || null,
+        event_type: event.eventType,
+        error: error.message,
+      });
+    }
+  }
 
   if (effectiveClassification.geofenceTransitionAmbiguous) {
     writeLog('warn', 'ambiguous geofence transition discarded', {
@@ -1056,6 +1067,7 @@ module.exports = async function handler(req, res) {
     let skippedDuplicatedAlert = 0;
 
     for (const event of events) {
+      try {
       if (!event.deviceId && config.defaultDeviceId) {
         event.deviceId = config.defaultDeviceId;
       }
@@ -1133,6 +1145,16 @@ module.exports = async function handler(req, res) {
       sent += multicastResponse.successCount;
       failed += multicastResponse.failureCount;
       deactivatedTotal += deactivated;
+      } catch (eventError) {
+        failed += 1;
+        writeLog('error', 'event processing failed', {
+          request_id: requestId,
+          device_id: event.deviceId || null,
+          event_id: event.eventId || null,
+          event_type: event.eventType || null,
+          error: eventError.message,
+        });
+      }
     }
 
     const status = 200;
