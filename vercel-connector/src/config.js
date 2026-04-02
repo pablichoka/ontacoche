@@ -66,7 +66,7 @@ function readConfig() {
     tripMinSpeedKph: Number(process.env.TRIP_MIN_SPEED_KPH || 8),
     tripMinMoveDistanceM: Number(process.env.TRIP_MIN_MOVE_DISTANCE_M || 50),
     geofenceAllowedReasonCodes: envAsNumberList(process.env.GEOFENCE_ALLOWED_REASON_CODES, [20, 2, 48]),
-    geofenceMaxRecalcAgeSec: Number(process.env.GEOFENCE_MAX_RECALC_AGE_SEC || 900),
+    geofenceMaxRecalcAgeSec: Number(process.env.GEOFENCE_MAX_RECALC_AGE_SEC || 0),
     timezone: process.env.TIMEZONE || 'Europe/Madrid',
     deviceConfigCollection: process.env.DEVICE_CONFIG_COLLECTION || 'device_config_state',
     geofenceConfigChangeSuppressSec: Number(process.env.GEOFENCE_CONFIG_CHANGE_SUPPRESS_SEC || 90),

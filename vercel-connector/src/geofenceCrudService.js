@@ -89,6 +89,7 @@ async function writeGeofenceConfigAlert({
   firestore,
   config,
   deviceId,
+  geofenceId,
   geofenceName,
   geofencePriority,
   action,
@@ -106,6 +107,14 @@ async function writeGeofenceConfigAlert({
   }
 
   const name = geofenceName || 'geocerca';
+  const dedupeKey = [
+    'geofence_config',
+    actionLower,
+    String(deviceId),
+    geofenceId == null ? name : String(geofenceId),
+  ]
+    .join(':')
+    .replace(/\s+/g, '_');
 
   const message = actionLower === 'created'
     ? `Geocerca creada: ${name}`
@@ -113,10 +122,10 @@ async function writeGeofenceConfigAlert({
       ? `Geocerca eliminada: ${name}`
       : `Geocerca actualizada: ${name}`;
 
-  await firestore.collection(alertsCollection).add({
+  const alertDoc = {
     source_ts: new Date().toISOString(),
     device: { id: String(deviceId), name: null },
-    event_id: null,
+    event_id: dedupeKey,
     event_kind: `geofence_config_${actionLower}`,
     severity: 'info',
     checked: false,
@@ -127,7 +136,16 @@ async function writeGeofenceConfigAlert({
     geofence_exit: false,
     geofence_name: name,
     message,
-  });
+  };
+
+  try {
+    await firestore.collection(alertsCollection).doc(dedupeKey).create(alertDoc);
+  } catch (error) {
+    if (error && error.code === 6) {
+      return;
+    }
+    throw error;
+  }
 }
 
 function normalizeCircleGeometry(input) {
@@ -420,6 +438,7 @@ async function createCircleGeofence(config, input) {
     firestore: input.firestore,
     config,
     deviceId: extractDeviceIdFromSelector(deviceSelector, config),
+    geofenceId,
     geofenceName: geofence.name || name,
     geofencePriority: geofence.priority,
     action: 'created',
@@ -488,6 +507,7 @@ async function createGeofence(config, input) {
     firestore: input.firestore,
     config,
     deviceId: extractDeviceIdFromSelector(deviceSelector, config),
+    geofenceId,
     geofenceName: geofence.name || name,
     geofencePriority: geofence.priority,
     action: 'created',
@@ -641,6 +661,7 @@ async function deleteGeofence(config, geofenceId, input = {}) {
         firestore: input.firestore,
         config,
         deviceId: extractDeviceIdFromSelector(deviceSelector, config),
+        geofenceId: id,
         geofenceName,
         geofencePriority,
         action: 'deleted',
