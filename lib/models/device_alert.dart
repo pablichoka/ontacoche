@@ -55,15 +55,18 @@ class DeviceAlert {
         payload['geofence_name'] ??
         payload['geofence'];
     final bool vibrationAlarm =
-        json['vibration_alarm'] == true ||
-        payload['vibration_alarm'] == true ||
-        payload['vibration.alarm'] == true;
+      _parseChecked(json['vibration_alarm']) == true ||
+      _parseChecked(payload['vibration_alarm']) == true ||
+      _parseChecked(payload['vibration.alarm']) == true;
     final bool geofenceAlarm =
-        json['geofence_alarm'] == true || payload['geofence_alarm'] == true;
+      _parseChecked(json['geofence_alarm']) == true ||
+      _parseChecked(payload['geofence_alarm']) == true;
     final bool geofenceEnterFlag =
-        json['geofence_enter'] == true || payload['geofence_enter'] == true;
+      _parseChecked(json['geofence_enter']) == true ||
+      _parseChecked(payload['geofence_enter']) == true;
     final bool geofenceExitFlag =
-        json['geofence_exit'] == true || payload['geofence_exit'] == true;
+      _parseChecked(json['geofence_exit']) == true ||
+      _parseChecked(payload['geofence_exit']) == true;
 
     DeviceAlertType type = DeviceAlertType.unknown;
     bool? isEntering;

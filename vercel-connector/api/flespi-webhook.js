@@ -358,98 +358,41 @@ function classifyEvent(event, config) {
     (typeof alarmValue === 'string' && alarmValue.toLowerCase().includes('vibration'));
 
   const eventType = String(event.eventType || '').toLowerCase();
-  const topic = String(firstDefined(raw, ['topic', 'event.topic']) || '').toLowerCase();
-  const intervalType = String(firstDefined(raw, ['type', 'interval.type', 'geofence.event']) || '').toLowerCase();
-  const geofenceRaw = firstDefined(raw, [
-    'geofence',
-    'geofence.name',
-    'plugin.geofence.name',
-    'name',
-  ]);
+  const intervalType = String(firstDefined(raw, ['type', 'interval.type']) || '').toLowerCase();
+  const eventKind = String(firstDefined(raw, ['event_kind', 'payload.event_kind']) || '').toLowerCase();
+  const reasonCode = normalizeNumber(firstDefined(raw, ['reason_code', 'user_properties.reason_code', 'payload.reason_code']));
+  const allowedRuntimeReason = reasonCode == null || reasonCode === 20 || reasonCode === 2;
 
-  const explicitEnterGeofence = firstDefined(raw, ['enter_geofence', 'payload.enter_geofence']);
-  const explicitExitGeofence = firstDefined(raw, ['exit_geofence', 'payload.exit_geofence']);
-  const geofenceName = geofenceRaw && typeof geofenceRaw === 'object'
-    ? (firstDefined(geofenceRaw, ['name', 'title', 'id']) || null)
-    : geofenceRaw;
+  const enterByKind = eventKind === 'geofence_enter' || eventKind === 'enter';
+  const exitByKind = eventKind === 'geofence_exit' || eventKind === 'exit';
+  const enterByType = intervalType === 'enter' || intervalType === 'activated' || eventType.includes('geofence_enter');
+  const exitByType = intervalType === 'exit' || intervalType === 'deactivated' || eventType.includes('geofence_exit');
+  const enterByField = asBoolean(firstDefined(raw, ['geofence_enter', 'enter_geofence', 'payload.geofence_enter', 'payload.enter_geofence']));
+  const exitByField = asBoolean(firstDefined(raw, ['geofence_exit', 'exit_geofence', 'payload.geofence_exit', 'payload.exit_geofence']));
 
-  const geofenceAlarmFlag = asBoolean(firstDefined(raw, [
-    'geofence_alarm',
-    'geofence.alarm',
-    'plugin.geofence.alarm',
-  ]));
+  const hasEnter = allowedRuntimeReason && (enterByKind || enterByType || enterByField);
+  const hasExit = allowedRuntimeReason && (exitByKind || exitByType || exitByField);
+  const geofenceTransitionAmbiguous = hasEnter === hasExit && (hasEnter || hasExit);
 
-  const geofenceSignal =
-    geofenceRaw != null ||
-    geofenceAlarmFlag ||
-    topic.includes('geofence') ||
-    eventType.includes('geofence') ||
-    intervalType.includes('geofence');
-
-  const geofenceConfigChange =
-    eventType.includes('geofence_update') ||
-    event.logCode === '0002' ||
-    event.logCode === '2' ||
-    topic.includes('/geofences/') ||
-    topic.includes('flespi/log/gw/geofences');
-
-  const geofenceEnterByField = asBoolean(explicitEnterGeofence);
-  const geofenceExitByField = asBoolean(explicitExitGeofence);
-
-  const geofenceEventKind = String(firstDefined(raw, [
-    'event_kind',
-    'payload.event_kind',
-    'interval.event',
-  ]) || '').toLowerCase();
-
-  const transitionByEventKind =
-    geofenceEventKind === 'geofence_enter' || geofenceEventKind === 'enter'
-      ? 'enter'
-      : ((geofenceEventKind === 'geofence_exit' || geofenceEventKind === 'exit') ? 'exit' : null);
-  const transitionByIntervalType =
-    intervalType === 'enter' || intervalType === 'activated'
-      ? 'enter'
-      : ((intervalType === 'exit' || intervalType === 'deactivated') ? 'exit' : null);
-  const transitionByEventType =
-    eventType.includes('geofence_enter')
-      ? 'enter'
-      : (eventType.includes('geofence_exit') ? 'exit' : null);
-  const transitionByTopic = topic.includes('/activated')
-    ? 'enter'
-    : (topic.includes('/deactivated') ? 'exit' : null);
-
-  const transitionCandidates = [];
-  if (geofenceEnterByField) transitionCandidates.push('enter');
-  if (geofenceExitByField) transitionCandidates.push('exit');
-  if (transitionByEventKind) transitionCandidates.push(transitionByEventKind);
-  if (transitionByIntervalType) transitionCandidates.push(transitionByIntervalType);
-  if (transitionByEventType) transitionCandidates.push(transitionByEventType);
-  if (transitionByTopic) transitionCandidates.push(transitionByTopic);
-
-  const hasEnterSignal = transitionCandidates.includes('enter');
-  const hasExitSignal = transitionCandidates.includes('exit');
-
-  const transitionDirection = hasEnterSignal && !hasExitSignal
-    ? 'enter'
-    : ((!hasEnterSignal && hasExitSignal) ? 'exit' : null);
-
-  const geofenceTransitionAmbiguous =
-    geofenceSignal &&
-    !geofenceConfigChange &&
-    transitionDirection == null &&
-    (transitionCandidates.length > 0 || geofenceAlarmFlag);
-
-  const geofenceEnter = geofenceSignal && !geofenceConfigChange && transitionDirection === 'enter';
-  const geofenceExit = geofenceSignal && !geofenceConfigChange && transitionDirection === 'exit';
+  const geofenceEnter = hasEnter && !hasExit;
+  const geofenceExit = hasExit && !hasEnter;
   const geofenceAlarm = geofenceEnter || geofenceExit;
 
+  const geofenceNameRaw = firstDefined(raw, [
+    'geofence_name',
+    'payload.geofence_name',
+    'geofence.name',
+    'payload.geofence.name',
+    'plugin.geofence.name',
+    'enter_geofence',
+    'exit_geofence',
+  ]);
+  const geofenceName = geofenceNameRaw == null || typeof geofenceNameRaw === 'boolean'
+    ? null
+    : String(geofenceNameRaw).trim() || null;
+
   const communicationActive = event.reportCode === '0200';
-  const tripClosed =
-    eventType === 'calculator_interval_closed' ||
-    eventType === 'interval_closed' ||
-    topic.includes('calculator_interval_closed') ||
-    topic.includes('/interval/closed') ||
-    (eventType.includes('calculator_interval') && event.tripEndTs != null);
+  const tripClosed = false;
 
   const shouldPush =
     vibrationAlarm ||
@@ -482,12 +425,6 @@ function classifyEvent(event, config) {
     title = 'Comunicacion activa';
     body = 'Tracker reportando posicion activa';
     severity = 'info';
-  } else if (geofenceConfigChange) {
-    title = 'Geocerca actualizada';
-    body = geofenceName
-      ? `Se actualizo la geocerca: ${geofenceName}`
-      : 'Se actualizo una geocerca';
-    severity = 'info';
   }
 
   return {
@@ -496,7 +433,7 @@ function classifyEvent(event, config) {
     geofenceEnter,
     geofenceExit,
     geofenceName: geofenceName ? String(geofenceName) : null,
-    geofenceConfigChange,
+    geofenceConfigChange: false,
     geofenceTransitionAmbiguous,
     transitionDirection,
     communicationActive,
@@ -505,89 +442,6 @@ function classifyEvent(event, config) {
     title,
     body,
     severity,
-  };
-}
-
-async function readLastGeofenceConfigChangeMs({ firestore, config, deviceId }) {
-  if (!deviceId) {
-    return null;
-  }
-
-  try {
-    const collectionName = config.deviceConfigCollection || 'device_config_state';
-    const snap = await firestore.collection(collectionName).doc(String(deviceId)).get();
-    if (!snap.exists) {
-      return null;
-    }
-    const data = snap.data() || {};
-    const raw = data.last_geofence_config_change_ts;
-    if (typeof raw === 'number' && Number.isFinite(raw)) {
-      return Math.floor(raw);
-    }
-    if (typeof raw === 'string' && raw.trim() !== '') {
-      const n = Number(raw);
-      return Number.isFinite(n) ? Math.floor(n) : null;
-    }
-  } catch (error) {
-    writeLog('warn', 'failed to read geofence config change timestamp', {
-      device_id: String(deviceId),
-      error: error.message,
-    });
-  }
-
-  return null;
-}
-
-async function applyGeofenceTransitionSuppression({
-  firestore,
-  config,
-  event,
-  classification,
-  sourceTsMs,
-}) {
-  if (!classification.geofenceAlarm || !event.deviceId) {
-    return classification;
-  }
-
-  const suppressSec = Number(config.geofenceConfigChangeSuppressSec || 0);
-  if (!Number.isFinite(suppressSec) || suppressSec <= 0) {
-    return classification;
-  }
-
-  const lastConfigChangeMs = await readLastGeofenceConfigChangeMs({
-    firestore,
-    config,
-    deviceId: event.deviceId,
-  });
-  if (lastConfigChangeMs == null) {
-    return classification;
-  }
-
-  const eventMs = sourceTsMs || Date.now();
-  const deltaSec = Math.abs(eventMs - lastConfigChangeMs) / 1000;
-  if (deltaSec > suppressSec) {
-    return classification;
-  }
-
-  writeLog('info', 'geofence transition suppressed after config change', {
-    device_id: String(event.deviceId),
-    event_id: event.eventId || null,
-    source_ts_ms: eventMs,
-    last_config_change_ts_ms: lastConfigChangeMs,
-    delta_sec: deltaSec,
-  });
-
-  return {
-    ...classification,
-    geofenceAlarm: false,
-    geofenceEnter: false,
-    geofenceExit: false,
-    shouldPush: false,
-    title: 'Geocerca actualizada',
-    body: classification.geofenceName
-      ? `Se actualizo la geocerca: ${classification.geofenceName}`
-      : 'Se actualizo una geocerca',
-    severity: 'info',
   };
 }
 
@@ -744,62 +598,6 @@ function parseTripPoints(raw) {
     .filter((point) => point != null);
 }
 
-function parseTripPayload(event, classification) {
-  if (!classification.tripClosed) {
-    return null;
-  }
-
-  const raw = event.raw || {};
-  const beginMs = parseTimestampToMs(firstDefined(raw, ['begin', 'interval.begin', 'payload.begin']) || event.tripBeginTs);
-  const endMs = parseTimestampToMs(firstDefined(raw, ['end', 'interval.end', 'payload.end']) || event.tripEndTs);
-
-  if (beginMs == null || endMs == null || endMs < beginMs) {
-    return null;
-  }
-
-  const distanceM =
-    normalizeNumber(firstDefined(raw, [
-      'distance',
-      'distance_m',
-      'mileage',
-      'interval.distance',
-      'payload.distance',
-      'summary.distance',
-    ])) || 0;
-  const maxSpeedKph =
-    normalizeNumber(firstDefined(raw, [
-      'max_speed',
-      'max_speed_kph',
-      'max.speed',
-      'interval.max_speed',
-      'payload.max_speed',
-      'summary.max_speed',
-    ])) || 0;
-
-  const polylineEncoded = firstDefined(raw, [
-    'polyline',
-    'polyline_encoded',
-    'interval.polyline',
-    'route.polyline',
-    'payload.polyline',
-  ]);
-
-  const rawTripPoints = parseTripPoints(raw);
-  const maxTripPoints = 1200;
-  const tripPoints = downsampleTripPoints(rawTripPoints, maxTripPoints);
-
-  return {
-    beginMs,
-    endMs,
-    distanceM,
-    maxSpeedKph,
-    polylineEncoded: typeof polylineEncoded === 'string' ? polylineEncoded : null,
-    tripPoints,
-    tripPointsCount: rawTripPoints.length,
-    tripPointsSampled: rawTripPoints.length > tripPoints.length,
-  };
-}
-
 function buildTripDocument(event, trip) {
   const doc = {
     deviceId: String(event.deviceId),
@@ -821,6 +619,231 @@ function buildTripDocument(event, trip) {
   }
 
   return doc;
+}
+
+function haversineDistanceM(a, b) {
+  if (!a || !b) {
+    return 0;
+  }
+  const lat1 = Number(a.lat);
+  const lon1 = Number(a.lng);
+  const lat2 = Number(b.lat);
+  const lon2 = Number(b.lng);
+  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) {
+    return 0;
+  }
+
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const earth = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const x =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  return earth * c;
+}
+
+function parsePositionPoint(raw, sourceTsMs) {
+  const lat = normalizeNumber(firstDefined(raw, ['position.latitude', 'latitude']));
+  const lng = normalizeNumber(firstDefined(raw, ['position.longitude', 'longitude']));
+  if (lat == null || lng == null) {
+    return null;
+  }
+
+  return {
+    lat,
+    lng,
+    speed: normalizeNumber(firstDefined(raw, ['position.speed', 'speed'])) || 0,
+    altitude: normalizeNumber(firstDefined(raw, ['position.altitude', 'altitude'])),
+    ts: sourceTsMs,
+  };
+}
+
+function isMovementTelemetry(event, config, point, runtimeState) {
+  if (!point || event.reportCode !== '0200') {
+    return false;
+  }
+
+  const speed = Number(point.speed || 0);
+  const minSpeed = Number(config.tripMinSpeedKph || 8);
+  if (speed >= minSpeed) {
+    return true;
+  }
+
+  const minMoveDistance = Number(config.tripMinMoveDistanceM || 50);
+  const previous = runtimeState && runtimeState.lastPosition;
+  if (!previous) {
+    return false;
+  }
+
+  return haversineDistanceM(previous, point) >= minMoveDistance;
+}
+
+function toRuntimePoint(point) {
+  return {
+    lat: point.lat,
+    lng: point.lng,
+    speed: Number(point.speed || 0),
+    altitude: point.altitude == null ? null : Number(point.altitude),
+    ts: point.ts,
+  };
+}
+
+function normalizeRuntimeState(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      active: false,
+      beginMs: null,
+      lastMovementMs: null,
+      lastSeenMs: null,
+      distanceM: 0,
+      maxSpeedKph: 0,
+      tripPoints: [],
+      lastPosition: null,
+    };
+  }
+
+  return {
+    active: data.active === true,
+    beginMs: normalizeNumber(data.begin_ms),
+    lastMovementMs: normalizeNumber(data.last_movement_ms),
+    lastSeenMs: normalizeNumber(data.last_seen_ms),
+    distanceM: normalizeNumber(data.distance_m) || 0,
+    maxSpeedKph: normalizeNumber(data.max_speed_kph) || 0,
+    tripPoints: Array.isArray(data.trip_points) ? data.trip_points : [],
+    lastPosition: data.last_position && typeof data.last_position === 'object'
+      ? {
+        lat: normalizeNumber(data.last_position.lat),
+        lng: normalizeNumber(data.last_position.lng),
+      }
+      : null,
+  };
+}
+
+async function writeTripFromRuntime({ firestore, config, event, runtimeState, endMs }) {
+  if (!runtimeState.beginMs || !endMs || endMs <= runtimeState.beginMs) {
+    return null;
+  }
+
+  const minDistance = Number(config.tripMinDistanceM || 200);
+  if ((runtimeState.distanceM || 0) < minDistance) {
+    return null;
+  }
+
+  const maxTripPoints = 1200;
+  const tripPoints = downsampleTripPoints(runtimeState.tripPoints || [], maxTripPoints);
+  const trip = {
+    beginMs: runtimeState.beginMs,
+    endMs,
+    distanceM: Number(runtimeState.distanceM || 0),
+    maxSpeedKph: Number(runtimeState.maxSpeedKph || 0),
+    polylineEncoded: null,
+    tripPoints,
+    tripPointsCount: (runtimeState.tripPoints || []).length,
+    tripPointsSampled: (runtimeState.tripPoints || []).length > tripPoints.length,
+  };
+
+  const tripDoc = buildTripDocument(event, trip);
+  const tripId = `mv_${String(event.deviceId)}_${runtimeState.beginMs}_${endMs}`;
+  const tripsCollection = config.tripsCollection || 'device_trips';
+  await firestore.collection(tripsCollection).doc(tripId).set(tripDoc, { merge: true });
+  return tripId;
+}
+
+async function processMovementTrip({ firestore, config, event, sourceTsMs }) {
+  if (!event.deviceId) {
+    return null;
+  }
+
+  const raw = event.raw || {};
+  const point = parsePositionPoint(raw, sourceTsMs);
+  const runtimeCollection = config.tripRuntimeCollection || 'device_trip_runtime';
+  const runtimeRef = firestore.collection(runtimeCollection).doc(String(event.deviceId));
+  const snap = await runtimeRef.get();
+  const runtime = normalizeRuntimeState(snap.exists ? (snap.data() || {}) : null);
+  const moving = isMovementTelemetry(event, config, point, runtime);
+  const inactivityMs = Math.max(60, Number(config.tripInactivitySec || 600)) * 1000;
+  const lastMovementMs = runtime.lastMovementMs || runtime.beginMs || null;
+
+  if (!runtime.active && !moving) {
+    await runtimeRef.set({
+      active: false,
+      last_seen_ms: sourceTsMs,
+      last_position: point ? { lat: point.lat, lng: point.lng } : runtime.lastPosition,
+      updated_at: new Date().toISOString(),
+    }, { merge: true });
+    return null;
+  }
+
+  if (runtime.active && lastMovementMs && sourceTsMs - lastMovementMs >= inactivityMs) {
+    await writeTripFromRuntime({
+      firestore,
+      config,
+      event,
+      runtimeState: runtime,
+      endMs: lastMovementMs,
+    });
+
+    runtime.active = false;
+    runtime.beginMs = null;
+    runtime.lastMovementMs = null;
+    runtime.distanceM = 0;
+    runtime.maxSpeedKph = 0;
+    runtime.tripPoints = [];
+  }
+
+  if (!moving) {
+    await runtimeRef.set({
+      active: runtime.active,
+      begin_ms: runtime.beginMs,
+      last_movement_ms: runtime.lastMovementMs,
+      last_seen_ms: sourceTsMs,
+      distance_m: runtime.distanceM,
+      max_speed_kph: runtime.maxSpeedKph,
+      trip_points: runtime.tripPoints,
+      last_position: point ? { lat: point.lat, lng: point.lng } : runtime.lastPosition,
+      updated_at: new Date().toISOString(),
+    }, { merge: true });
+    return null;
+  }
+
+  const nextRuntime = {
+    active: true,
+    beginMs: runtime.beginMs || sourceTsMs,
+    lastMovementMs: sourceTsMs,
+    lastSeenMs: sourceTsMs,
+    distanceM: runtime.distanceM || 0,
+    maxSpeedKph: Math.max(runtime.maxSpeedKph || 0, Number(point.speed || 0)),
+    tripPoints: Array.isArray(runtime.tripPoints) ? [...runtime.tripPoints] : [],
+    lastPosition: runtime.lastPosition,
+  };
+
+  if (nextRuntime.lastPosition && point) {
+    nextRuntime.distanceM += haversineDistanceM(nextRuntime.lastPosition, point);
+  }
+  if (point) {
+    nextRuntime.tripPoints.push(toRuntimePoint(point));
+    if (nextRuntime.tripPoints.length > 1800) {
+      nextRuntime.tripPoints = downsampleTripPoints(nextRuntime.tripPoints, 1200);
+    }
+    nextRuntime.lastPosition = { lat: point.lat, lng: point.lng };
+  }
+
+  await runtimeRef.set({
+    active: true,
+    begin_ms: nextRuntime.beginMs,
+    last_movement_ms: nextRuntime.lastMovementMs,
+    last_seen_ms: nextRuntime.lastSeenMs,
+    distance_m: Number(nextRuntime.distanceM || 0),
+    max_speed_kph: Number(nextRuntime.maxSpeedKph || 0),
+    trip_points: nextRuntime.tripPoints,
+    last_position: nextRuntime.lastPosition,
+    updated_at: new Date().toISOString(),
+  }, { merge: true });
+
+  return null;
 }
 
 async function writeAlertDocument({ firestore, config, eventId, alertKind, alertDoc }) {
@@ -856,13 +879,7 @@ async function persistEvent({ firestore, config, event, classification }) {
   const stateRef = firestore.collection(config.deviceStateCollection).doc(deviceIdStr);
 
   const snapshot = buildStateSnapshot(event, classification, config);
-  const effectiveClassification = await applyGeofenceTransitionSuppression({
-    firestore,
-    config,
-    event,
-    classification,
-    sourceTsMs: snapshot.source_ts_ms,
-  });
+  const effectiveClassification = classification;
   const writeSnapshot = { ...snapshot };
   delete writeSnapshot.source_ts_ms;
   delete writeSnapshot.updated_at;
@@ -887,16 +904,12 @@ async function persistEvent({ firestore, config, event, classification }) {
     }
   }
 
-  const tripPayload = parseTripPayload(event, classification);
-  if (tripPayload) {
-    const tripsCollection = config.tripsCollection || 'device_trips';
-    const tripDoc = buildTripDocument(event, tripPayload);
-    if (event.eventId) {
-      await firestore.collection(tripsCollection).doc(String(event.eventId)).set(tripDoc, { merge: true });
-    } else {
-      await firestore.collection(tripsCollection).add(tripDoc);
-    }
-  }
+  await processMovementTrip({
+    firestore,
+    config,
+    event,
+    sourceTsMs: snapshot.source_ts_ms,
+  });
 
   if (effectiveClassification.geofenceTransitionAmbiguous) {
     writeLog('warn', 'ambiguous geofence transition discarded', {
@@ -1072,6 +1085,9 @@ module.exports = async function handler(req, res) {
       payload.data.severity = effectiveClassification.severity;
       payload.data.report_code = String(event.reportCode || '');
       payload.data.event_kind = String(persistenceResult.eventKind || event.eventType || '');
+      payload.data.geofence_name = String(effectiveClassification.geofenceName || '');
+      payload.data.geofence_enter = effectiveClassification.geofenceEnter ? 'true' : 'false';
+      payload.data.geofence_exit = effectiveClassification.geofenceExit ? 'true' : 'false';
       const multicastResponse = await messaging.sendEachForMulticast({
         ...payload,
         tokens,
