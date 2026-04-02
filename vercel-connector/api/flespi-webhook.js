@@ -361,7 +361,10 @@ function classifyEvent(event, config) {
   const intervalType = String(firstDefined(raw, ['type', 'interval.type']) || '').toLowerCase();
   const eventKind = String(firstDefined(raw, ['event_kind', 'payload.event_kind']) || '').toLowerCase();
   const reasonCode = normalizeNumber(firstDefined(raw, ['reason_code', 'user_properties.reason_code', 'payload.reason_code']));
-  const allowedRuntimeReason = reasonCode == null || reasonCode === 20 || reasonCode === 2;
+  const allowedReasons = Array.isArray(config.geofenceAllowedReasonCodes)
+    ? config.geofenceAllowedReasonCodes
+    : [20, 2, 48];
+  const allowedRuntimeReason = reasonCode == null || allowedReasons.includes(Number(reasonCode));
 
   const enterByKind = eventKind === 'geofence_enter' || eventKind === 'enter';
   const exitByKind = eventKind === 'geofence_exit' || eventKind === 'exit';
@@ -436,6 +439,7 @@ function classifyEvent(event, config) {
     geofenceConfigChange: false,
     geofenceTransitionAmbiguous,
     transitionDirection,
+    reasonCode: reasonCode == null ? null : Number(reasonCode),
     communicationActive,
     tripClosed,
     shouldPush,
@@ -879,7 +883,7 @@ async function persistEvent({ firestore, config, event, classification }) {
   const stateRef = firestore.collection(config.deviceStateCollection).doc(deviceIdStr);
 
   const snapshot = buildStateSnapshot(event, classification, config);
-  const effectiveClassification = classification;
+  let effectiveClassification = classification;
   const writeSnapshot = { ...snapshot };
   delete writeSnapshot.source_ts_ms;
   delete writeSnapshot.updated_at;
@@ -918,6 +922,33 @@ async function persistEvent({ firestore, config, event, classification }) {
       geofence_name: effectiveClassification.geofenceName || null,
       event_type: event.eventType,
     });
+  }
+
+  const recalcMaxAgeMs = Math.max(0, Number(config.geofenceMaxRecalcAgeSec || 900)) * 1000;
+  const isRecalcTransition =
+    effectiveClassification.geofenceAlarm &&
+    Number(effectiveClassification.reasonCode) === 48;
+  const isTooOldRecalc =
+    isRecalcTransition &&
+    recalcMaxAgeMs > 0 &&
+    (Date.now() - Number(snapshot.source_ts_ms || 0)) > recalcMaxAgeMs;
+
+  if (isTooOldRecalc) {
+    writeLog('warn', 'stale recalculated geofence transition discarded', {
+      device_id: deviceIdStr,
+      event_id: event.eventId || null,
+      reason_code: effectiveClassification.reasonCode,
+      source_ts_ms: snapshot.source_ts_ms,
+      max_age_ms: recalcMaxAgeMs,
+    });
+
+    effectiveClassification = {
+      ...effectiveClassification,
+      geofenceAlarm: false,
+      geofenceEnter: false,
+      geofenceExit: false,
+      shouldPush: false,
+    };
   }
 
   if (effectiveClassification.vibrationAlarm || effectiveClassification.geofenceAlarm) {
