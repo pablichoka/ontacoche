@@ -152,6 +152,13 @@ class _StatusCard extends ConsumerWidget {
 
     final rawStatePayload = ref.watch(deviceRawStateProvider);
     final Map<String, dynamic>? rawPayload = rawStatePayload.valueOrNull;
+    final Map<String, dynamic>? rawState = (() {
+      final dynamic state = rawPayload?['state'];
+      if (state is Map) {
+        return Map<String, dynamic>.from(state);
+      }
+      return null;
+    })();
 
     final String deviceName = (() {
       // Prefer device.name from device_last_state: state.device.name
@@ -270,6 +277,7 @@ class _StatusCard extends ConsumerWidget {
 
     String lastPositionText = 'Sin posiciones registradas';
     final DateTime? lastTime =
+        Parsers.fromUnknown(rawState?['source_ts']) ??
         positionState.valueOrNull?.timestamp ??
         position?.timestamp ??
         latestStoredRecord?.recordedAt;
