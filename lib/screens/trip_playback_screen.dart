@@ -18,7 +18,7 @@ class TripPlaybackScreen extends StatefulWidget {
 }
 
 class _TripPlaybackScreenState extends State<TripPlaybackScreen> {
-  static const List<double> _speedOptions = <double>[0.5, 1.0, 2.0];
+  static const List<double> _speedOptions = <double>[1.0, 2.0, 4.0];
 
   final MapController _mapController = MapController();
   Timer? _playbackTimer;
@@ -46,12 +46,9 @@ class _TripPlaybackScreenState extends State<TripPlaybackScreen> {
 
   Duration get _frameDuration {
     if (_points.length < 2) {
-      return const Duration(milliseconds: 600);
+      return const Duration(milliseconds: 2000);
     }
-    final double baseMs = widget.trip.durationSec > 0
-        ? (widget.trip.durationSec * 1000) / (_points.length - 1)
-        : 900;
-    final int adjusted = (baseMs / _playbackSpeed).round().clamp(80, 2500);
+    final int adjusted = (2000 / _playbackSpeed).round().clamp(250, 5000);
     return Duration(milliseconds: adjusted);
   }
 
@@ -389,7 +386,7 @@ class _PlaybackControls extends StatelessWidget {
                 children: speedOptions
                     .map(
                       (double speed) => ChoiceChip(
-                        label: Text('${speed}x'),
+                        label: Text('x${speed.toStringAsFixed(0)}'),
                         selected: playbackSpeed == speed,
                         onSelected: (_) => onSpeedChanged(speed),
                         selectedColor: AppColors.brand.withValues(alpha: 0.2),

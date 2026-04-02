@@ -212,7 +212,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                         width: 24,
                         height: 24,
                         child: ExpressiveIndicator(
-                          strokeWidth: 2.2,
+                          strokeWidth: 3,
                           color: AppColors.foreground,
                         ),
                       )
