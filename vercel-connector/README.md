@@ -85,7 +85,7 @@ Notes:
 
 ## firestore trip model (`device_trips`)
 
-The webhook persists closed trip intervals in `device_trips`. Besides summary fields (`startedAt`, `endedAt`, `distanceM`, `maxSpeedKph`, `polylineEncoded`), trips can include optional telemetry points for playback:
+The webhook builds trips from `0200` telemetry movement runtime and stores completed trips in `device_trips`. Besides summary fields (`startedAt`, `endedAt`, `distanceM`, `maxSpeedKph`, `polylineEncoded`), trips can include optional telemetry points for playback:
 
 ```json
 {
@@ -106,6 +106,13 @@ The webhook persists closed trip intervals in `device_trips`. Besides summary fi
 Notes:
 - `tripPoints` is optional for backward compatibility with historical trips.
 - large trips are downsampled server-side to protect Firestore document size limits.
+
+Trip runtime tuning (optional env vars):
+- `TRIP_RUNTIME_COLLECTION`: runtime state collection. default: `device_trip_runtime`
+- `TRIP_INACTIVITY_SEC`: inactivity window to close a trip. default: `600`
+- `TRIP_MIN_DISTANCE_M`: minimum distance to persist a trip. default: `200`
+- `TRIP_MIN_SPEED_KPH`: speed threshold to classify movement. default: `8`
+- `TRIP_MIN_MOVE_DISTANCE_M`: fallback displacement threshold when speed is low. default: `50`
 
 ## local run (optional)
 

@@ -363,7 +363,7 @@ function classifyEvent(event, config) {
   const reasonCode = normalizeNumber(firstDefined(raw, ['reason_code', 'user_properties.reason_code', 'payload.reason_code']));
   const allowedReasons = Array.isArray(config.geofenceAllowedReasonCodes)
     ? config.geofenceAllowedReasonCodes
-    : [20, 2, 48];
+    : [20, 2];
   const allowedRuntimeReason = reasonCode == null || allowedReasons.includes(Number(reasonCode));
 
   const enterByKind = eventKind === 'geofence_enter' || eventKind === 'enter';
@@ -379,7 +379,9 @@ function classifyEvent(event, config) {
 
   const geofenceEnter = hasEnter && !hasExit;
   const geofenceExit = hasExit && !hasEnter;
-  const geofenceAlarm = geofenceEnter || geofenceExit;
+  const transitionDirection = geofenceEnter ? 'enter' : (geofenceExit ? 'exit' : null);
+  const isRecalcTransition = Number(reasonCode) === 48;
+  const geofenceAlarm = (geofenceEnter || geofenceExit) && !isRecalcTransition;
 
   const geofenceNameRaw = firstDefined(raw, [
     'geofence_name',
@@ -611,7 +613,7 @@ function buildTripDocument(event, trip) {
     distanceM: trip.distanceM,
     maxSpeedKph: trip.maxSpeedKph,
     polylineEncoded: trip.polylineEncoded,
-    source: 'flespi_calculator',
+    source: 'movement_runtime',
     eventId: event.eventId || null,
     createdAt: new Date().toISOString(),
   };
@@ -908,7 +910,12 @@ async function persistEvent({ firestore, config, event, classification }) {
     }
   }
 
-  if (String(event.eventType || '').toLowerCase() === 'tracker_telemetry') {
+  const isTripRuntimeCandidate =
+    event.reportCode === '0200' &&
+    firstDefined(raw, ['position.latitude', 'latitude']) != null &&
+    firstDefined(raw, ['position.longitude', 'longitude']) != null;
+
+  if (isTripRuntimeCandidate) {
     try {
       await processMovementTrip({
         firestore,
@@ -939,18 +946,20 @@ async function persistEvent({ firestore, config, event, classification }) {
   const isRecalcTransition =
     effectiveClassification.geofenceAlarm &&
     Number(effectiveClassification.reasonCode) === 48;
-  const isTooOldRecalc =
-    isRecalcTransition &&
+  const isStaleGeofenceTransition =
+    effectiveClassification.geofenceAlarm &&
     recalcMaxAgeMs > 0 &&
     (Date.now() - Number(snapshot.source_ts_ms || 0)) > recalcMaxAgeMs;
 
-  if (isTooOldRecalc) {
-    writeLog('warn', 'stale recalculated geofence transition discarded', {
+  if (isRecalcTransition || isStaleGeofenceTransition) {
+    writeLog('warn', 'geofence transition discarded', {
       device_id: deviceIdStr,
       event_id: event.eventId || null,
       reason_code: effectiveClassification.reasonCode,
       source_ts_ms: snapshot.source_ts_ms,
       max_age_ms: recalcMaxAgeMs,
+      stale_transition: isStaleGeofenceTransition,
+      recalc_transition: isRecalcTransition,
     });
 
     effectiveClassification = {
