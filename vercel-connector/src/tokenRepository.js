@@ -81,25 +81,6 @@ async function getActiveTokens({ firestore, collectionName, deviceId, userId }) 
     }
   }
 
-  if (tokenMap.size === 0) {
-    const fallbackSnapshot = await safeQuery(
-      () => collection
-        .where('active', '==', true)
-        .limit(20),
-      'fallback_active_only',
-    );
-
-    if (fallbackSnapshot) {
-      fallbackSnapshot.forEach((doc) => {
-        const data = doc.data();
-        const token = data.token || doc.id;
-        if (token) {
-          tokenMap.set(token, doc.ref);
-        }
-      });
-    }
-  }
-
   return tokenMap;
 }
 

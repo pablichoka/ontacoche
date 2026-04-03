@@ -67,7 +67,9 @@ module.exports = async function handler(req, res) {
 
   try {
     const firestore = getFirebaseApp().firestore();
-    await firestore.collection(collection).doc(token).set({
+    const colRef = firestore.collection(collection);
+
+    await colRef.doc(token).set({
       token,
       device_id: deviceId || null,
       user_id: userId || null,
@@ -75,6 +77,46 @@ module.exports = async function handler(req, res) {
       active: true,
       updated_at: new Date().toISOString(),
     }, { merge: true });
+
+    const staleRefs = [];
+
+    if (deviceId) {
+      const sameDevice = await colRef
+        .where('device_id', '==', deviceId)
+        .where('platform', '==', platform)
+        .where('active', '==', true)
+        .get();
+
+      sameDevice.forEach((doc) => {
+        if (doc.id !== token) {
+          staleRefs.push(doc.ref);
+        }
+      });
+    } else if (userId) {
+      const sameUser = await colRef
+        .where('user_id', '==', userId)
+        .where('platform', '==', platform)
+        .where('active', '==', true)
+        .get();
+
+      sameUser.forEach((doc) => {
+        if (doc.id !== token) {
+          staleRefs.push(doc.ref);
+        }
+      });
+    }
+
+    if (staleRefs.length > 0) {
+      const batch = firestore.batch();
+      staleRefs.forEach((ref) => {
+        batch.update(ref, {
+          active: false,
+          replaced_by: token,
+          updated_at: new Date().toISOString(),
+        });
+      });
+      await batch.commit();
+    }
 
     return res.status(200).json({ ok: true });
   } catch (error) {
