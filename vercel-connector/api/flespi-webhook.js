@@ -473,9 +473,9 @@ function resolveSourceTimestampMs(event, classification) {
       : ['begin', 'interval.begin', 'payload.begin', 'end', 'interval.end', 'payload.end'];
 
     return (
-      parseTimestampToMs(firstDefined(raw, edgePriority)) ||
       parseTimestampToMs(firstDefined(raw, ['ts', 'payload.ts', 'timestamp', 'payload.timestamp'])) ||
       parseTimestampToMs(event.ts) ||
+      parseTimestampToMs(firstDefined(raw, edgePriority)) ||
       parseTimestampToMs(firstDefined(raw, ['server.timestamp'])) ||
       Date.now()
     );
@@ -719,6 +719,7 @@ function normalizeRuntimeState(data) {
     distanceM: normalizeNumber(data.distance_m) || 0,
     maxSpeedKph: normalizeNumber(data.max_speed_kph) || 0,
     tripPoints: Array.isArray(data.trip_points) ? data.trip_points : [],
+    lastOdometerKm: normalizeNumber(data.last_odometer_km),
     lastPosition: data.last_position && typeof data.last_position === 'object'
       ? {
         lat: normalizeNumber(data.last_position.lat),
@@ -765,11 +766,18 @@ async function processMovementTrip({ firestore, config, event, sourceTsMs }) {
 
   const raw = event.raw || {};
   const point = parsePositionPoint(raw, sourceTsMs);
+  const odometerKm = normalizeNumber(firstDefined(raw, ['vehicle.mileage', 'vehicle.odometer', 'mileage']));
   const runtimeCollection = config.tripRuntimeCollection || 'device_trip_runtime';
   const runtimeRef = firestore.collection(runtimeCollection).doc(String(event.deviceId));
   const snap = await runtimeRef.get();
   const runtime = normalizeRuntimeState(snap.exists ? (snap.data() || {}) : null);
-  const moving = isMovementTelemetry(event, config, point, runtime);
+  const movingFromTelemetry = isMovementTelemetry(event, config, point, runtime);
+  const odometerDeltaM =
+    odometerKm != null && runtime.lastOdometerKm != null
+      ? Math.max(0, (odometerKm - runtime.lastOdometerKm) * 1000)
+      : 0;
+  const movingFromOdometer = odometerDeltaM >= Number(config.tripMinMoveDistanceM || 50);
+  const moving = movingFromTelemetry || movingFromOdometer;
   const inactivityMs = Math.max(60, Number(config.tripInactivitySec || 600)) * 1000;
   const lastMovementMs = runtime.lastMovementMs || runtime.beginMs || null;
 
@@ -777,6 +785,7 @@ async function processMovementTrip({ firestore, config, event, sourceTsMs }) {
     await runtimeRef.set({
       active: false,
       last_seen_ms: sourceTsMs,
+      last_odometer_km: odometerKm != null ? odometerKm : runtime.lastOdometerKm,
       last_position: point ? { lat: point.lat, lng: point.lng } : runtime.lastPosition,
       updated_at: new Date().toISOString(),
     }, { merge: true });
@@ -809,6 +818,7 @@ async function processMovementTrip({ firestore, config, event, sourceTsMs }) {
       distance_m: runtime.distanceM,
       max_speed_kph: runtime.maxSpeedKph,
       trip_points: runtime.tripPoints,
+      last_odometer_km: odometerKm != null ? odometerKm : runtime.lastOdometerKm,
       last_position: point ? { lat: point.lat, lng: point.lng } : runtime.lastPosition,
       updated_at: new Date().toISOString(),
     }, { merge: true });
@@ -823,12 +833,20 @@ async function processMovementTrip({ firestore, config, event, sourceTsMs }) {
     distanceM: runtime.distanceM || 0,
     maxSpeedKph: Math.max(runtime.maxSpeedKph || 0, Number(point.speed || 0)),
     tripPoints: Array.isArray(runtime.tripPoints) ? [...runtime.tripPoints] : [],
+    lastOdometerKm: odometerKm != null ? odometerKm : runtime.lastOdometerKm,
     lastPosition: runtime.lastPosition,
   };
 
+  let segmentDistanceM = 0;
   if (nextRuntime.lastPosition && point) {
-    nextRuntime.distanceM += haversineDistanceM(nextRuntime.lastPosition, point);
+    segmentDistanceM = haversineDistanceM(nextRuntime.lastPosition, point);
+    nextRuntime.distanceM += segmentDistanceM;
   }
+
+  if (odometerDeltaM > 0 && (segmentDistanceM <= 1 || !point || !nextRuntime.lastPosition)) {
+    nextRuntime.distanceM += odometerDeltaM;
+  }
+
   if (point) {
     nextRuntime.tripPoints.push(toRuntimePoint(point));
     if (nextRuntime.tripPoints.length > 1800) {
@@ -845,6 +863,7 @@ async function processMovementTrip({ firestore, config, event, sourceTsMs }) {
     distance_m: Number(nextRuntime.distanceM || 0),
     max_speed_kph: Number(nextRuntime.maxSpeedKph || 0),
     trip_points: nextRuntime.tripPoints,
+    last_odometer_km: nextRuntime.lastOdometerKm,
     last_position: nextRuntime.lastPosition,
     updated_at: new Date().toISOString(),
   }, { merge: true });
@@ -910,10 +929,9 @@ async function persistEvent({ firestore, config, event, classification }) {
     }
   }
 
-  const isTripRuntimeCandidate =
-    event.reportCode === '0200' &&
-    firstDefined(raw, ['position.latitude', 'latitude']) != null &&
-    firstDefined(raw, ['position.longitude', 'longitude']) != null;
+  const tripRuntimeCodes = new Set(['0200', '0002', '0100', '0102']);
+  const hasOdometer = firstDefined(raw, ['vehicle.mileage', 'vehicle.odometer', 'mileage']) != null;
+  const isTripRuntimeCandidate = hasOdometer || tripRuntimeCodes.has(String(event.reportCode || ''));
 
   if (isTripRuntimeCandidate) {
     try {
