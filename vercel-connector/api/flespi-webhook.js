@@ -535,6 +535,30 @@ function buildStateSnapshot(event, classification, config) {
   return snapshot;
 }
 
+function resolveCanonicalDeviceId(event, classification, config) {
+  const raw = event.raw || {};
+  const ident = firstDefined(raw, [
+    'ident',
+    'payload.ident',
+    'configuration.ident',
+    'payload.configuration.ident',
+  ]);
+
+  if (ident != null && String(ident).trim() !== '') {
+    return String(ident).trim();
+  }
+
+  if (classification && classification.geofenceAlarm && config && config.defaultDeviceId) {
+    return String(config.defaultDeviceId).trim();
+  }
+
+  if (event.deviceId != null && String(event.deviceId).trim() !== '') {
+    return String(event.deviceId).trim();
+  }
+
+  return null;
+}
+
 function normalizeNumber(value) {
   if (value == null || value === '') {
     return null;
@@ -895,15 +919,17 @@ async function writeAlertDocument({ firestore, config, eventId, alertKind, alert
 }
 
 async function persistEvent({ firestore, config, event, classification }) {
-  if (!event.deviceId) {
-    return { alertCreated: false, dedupeKey: null };
+  const canonicalDeviceId = resolveCanonicalDeviceId(event, classification, config);
+  if (!canonicalDeviceId) {
+    return { alertCreated: false, dedupeKey: null, routingDeviceId: null };
   }
 
+  const effectiveEvent = { ...event, deviceId: canonicalDeviceId };
   const raw = event.raw || {};
-  const deviceIdStr = String(event.deviceId);
+  const deviceIdStr = String(canonicalDeviceId);
   const stateRef = firestore.collection(config.deviceStateCollection).doc(deviceIdStr);
 
-  const snapshot = buildStateSnapshot(event, classification, config);
+  const snapshot = buildStateSnapshot(effectiveEvent, classification, config);
   let effectiveClassification = classification;
   const writeSnapshot = { ...snapshot };
   delete writeSnapshot.source_ts_ms;
@@ -938,7 +964,7 @@ async function persistEvent({ firestore, config, event, classification }) {
       await processMovementTrip({
         firestore,
         config,
-        event,
+        event: effectiveEvent,
         sourceTsMs: snapshot.source_ts_ms,
       });
     } catch (error) {
@@ -996,7 +1022,7 @@ async function persistEvent({ firestore, config, event, classification }) {
         ? 'geofence_enter'
         : 'geofence_exit');
 
-    const persistedEventId = event.eventId || buildSyntheticAlertEventId(event, effectiveClassification, snapshot.source_ts_ms);
+    const persistedEventId = effectiveEvent.eventId || buildSyntheticAlertEventId(effectiveEvent, effectiveClassification, snapshot.source_ts_ms);
 
     const alertDocBase = {
       source_ts: snapshot.source_ts,
@@ -1037,6 +1063,7 @@ async function persistEvent({ firestore, config, event, classification }) {
       dedupeKey: writeResult.id,
       eventKind: alertKind,
       classification: effectiveClassification,
+      routingDeviceId: deviceIdStr,
     };
   }
 
@@ -1045,6 +1072,7 @@ async function persistEvent({ firestore, config, event, classification }) {
     dedupeKey: null,
     eventKind: null,
     classification: effectiveClassification,
+    routingDeviceId: deviceIdStr,
   };
 }
 
@@ -1104,6 +1132,7 @@ module.exports = async function handler(req, res) {
       let persistenceResult = {
         alertCreated: false,
         dedupeKey: null,
+        routingDeviceId: null,
       };
 
       if (event.deviceId) {
@@ -1139,7 +1168,7 @@ module.exports = async function handler(req, res) {
       const tokenRefsByValue = await getActiveTokens({
         firestore,
         collectionName: config.tokenCollection,
-        deviceId: event.deviceId,
+        deviceId: persistenceResult.routingDeviceId || event.deviceId,
         userId: event.userId,
       });
 
