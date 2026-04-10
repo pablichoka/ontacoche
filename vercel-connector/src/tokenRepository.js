@@ -6,6 +6,7 @@ const TOKEN_INVALID_ERRORS = new Set([
 async function getActiveTokens({ firestore, collectionName, deviceId, userId }) {
   const tokenMap = new Map();
   const collection = firestore.collection(collectionName);
+  let duplicateTokens = 0;
 
   async function safeQuery(buildQuery, label) {
     try {
@@ -24,9 +25,14 @@ async function getActiveTokens({ firestore, collectionName, deviceId, userId }) 
   }
 
   if (deviceId) {
+    const normalizedDeviceId = String(deviceId).trim();
+    if (!normalizedDeviceId) {
+      return tokenMap;
+    }
+
     const byDeviceSnapshot = await safeQuery(
       () => collection
-        .where('device_id', '==', String(deviceId))
+        .where('device_id', '==', normalizedDeviceId)
         .where('active', '==', true),
       'device_id:string+active',
     );
@@ -36,12 +42,15 @@ async function getActiveTokens({ firestore, collectionName, deviceId, userId }) 
         const data = doc.data();
         const token = data.token || doc.id;
         if (token) {
+          if (tokenMap.has(token)) {
+            duplicateTokens += 1;
+          }
           tokenMap.set(token, doc.ref);
         }
       });
     }
 
-    const numericDeviceId = Number.parseInt(String(deviceId), 10);
+    const numericDeviceId = Number.parseInt(normalizedDeviceId, 10);
     if (Number.isFinite(numericDeviceId)) {
       const byNumericDeviceSnapshot = await safeQuery(
         () => collection
@@ -55,6 +64,9 @@ async function getActiveTokens({ firestore, collectionName, deviceId, userId }) 
           const data = doc.data();
           const token = data.token || doc.id;
           if (token) {
+            if (tokenMap.has(token)) {
+              duplicateTokens += 1;
+            }
             tokenMap.set(token, doc.ref);
           }
         });
@@ -63,9 +75,14 @@ async function getActiveTokens({ firestore, collectionName, deviceId, userId }) 
   }
 
   if (userId) {
+    const normalizedUserId = String(userId).trim();
+    if (!normalizedUserId) {
+      return tokenMap;
+    }
+
     const byUserSnapshot = await safeQuery(
       () => collection
-        .where('user_id', '==', String(userId))
+        .where('user_id', '==', normalizedUserId)
         .where('active', '==', true),
       'user_id+active',
     );
@@ -75,10 +92,25 @@ async function getActiveTokens({ firestore, collectionName, deviceId, userId }) 
         const data = doc.data();
         const token = data.token || doc.id;
         if (token) {
+          if (tokenMap.has(token)) {
+            duplicateTokens += 1;
+          }
           tokenMap.set(token, doc.ref);
         }
       });
     }
+  }
+
+  if (duplicateTokens > 0) {
+    console.log(JSON.stringify({
+      level: 'info',
+      message: 'token lookup deduplicated repeated entries',
+      duplicates: duplicateTokens,
+      unique_tokens: tokenMap.size,
+      device_id: deviceId == null ? null : String(deviceId),
+      user_id: userId == null ? null : String(userId),
+      ts: new Date().toISOString(),
+    }));
   }
 
   return tokenMap;

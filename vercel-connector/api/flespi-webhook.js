@@ -82,6 +82,15 @@ function extractDeviceIdFromTopic(topic) {
   return match ? match[1] : null;
 }
 
+function normalizeDeviceId(value) {
+  if (value == null) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
 function asBoolean(value) {
   if (typeof value === 'boolean') {
     return value;
@@ -244,7 +253,7 @@ function normalizeEvent(body) {
 
   return {
     eventId: sanitizeEventId(firstDefined(root, ['event_id', 'id', 'event.id']) || firstDefined(payload, ['event_id', 'id']) || null),
-    deviceId: deviceId != null ? String(deviceId) : null,
+    deviceId: normalizeDeviceId(deviceId),
     userId: (firstDefined(root, ['user_id', 'userId']) || firstDefined(payload, ['user_id', 'userId']) || null),
     eventType: String(inferredEventType),
     reportCode,
@@ -381,7 +390,7 @@ function classifyEvent(event, config) {
   const geofenceExit = hasExit && !hasEnter;
   const transitionDirection = geofenceEnter ? 'enter' : (geofenceExit ? 'exit' : null);
   const isRecalcTransition = Number(reasonCode) === 48;
-  const geofenceAlarm = (geofenceEnter || geofenceExit) && !isRecalcTransition;
+  let geofenceAlarm = (geofenceEnter || geofenceExit) && !isRecalcTransition;
 
   const geofenceNameRaw = firstDefined(raw, [
     'geofence_name',
@@ -395,6 +404,10 @@ function classifyEvent(event, config) {
   const geofenceName = geofenceNameRaw == null || typeof geofenceNameRaw === 'boolean'
     ? null
     : String(geofenceNameRaw).trim() || null;
+
+  if (vibrationAlarm && geofenceAlarm) {
+    geofenceAlarm = false;
+  }
 
   const communicationActive = event.reportCode === '0200';
   const tripClosed = false;
@@ -503,6 +516,14 @@ function buildSyntheticAlertEventId(event, classification, sourceTsMs) {
   return `gf_${deviceKey}_${direction}_${normalizedGeofenceKey}_${bucket}`;
 }
 
+function buildSyntheticVibrationEventId(event, sourceTsMs) {
+  const deviceKey = String(event.deviceId || 'unknown').replace(/[^a-zA-Z0-9_-]+/g, '_');
+  const bucket = Math.floor((Number(sourceTsMs) || Date.now()) / 1000);
+  const reportCode = String(event.reportCode || 'none').replace(/[^a-zA-Z0-9_-]+/g, '_');
+  const eventType = String(event.eventType || 'vibration').toLowerCase().replace(/[^a-z0-9_-]+/g, '_').slice(0, 48) || 'vibration';
+  return `vb_${deviceKey}_${reportCode}_${eventType}_${bucket}`;
+}
+
 function buildStateSnapshot(event, classification, config) {
   const raw = event.raw || {};
   const sourceTsMs = resolveSourceTimestampMs(event, classification);
@@ -533,30 +554,6 @@ function buildStateSnapshot(event, classification, config) {
   };
 
   return snapshot;
-}
-
-function resolveCanonicalDeviceId(event, classification, config) {
-  const raw = event.raw || {};
-  const ident = firstDefined(raw, [
-    'ident',
-    'payload.ident',
-    'configuration.ident',
-    'payload.configuration.ident',
-  ]);
-
-  if (ident != null && String(ident).trim() !== '') {
-    return String(ident).trim();
-  }
-
-  if (classification && classification.geofenceAlarm && config && config.defaultDeviceId) {
-    return String(config.defaultDeviceId).trim();
-  }
-
-  if (event.deviceId != null && String(event.deviceId).trim() !== '') {
-    return String(event.deviceId).trim();
-  }
-
-  return null;
 }
 
 function normalizeNumber(value) {
@@ -919,17 +916,15 @@ async function writeAlertDocument({ firestore, config, eventId, alertKind, alert
 }
 
 async function persistEvent({ firestore, config, event, classification }) {
-  const canonicalDeviceId = resolveCanonicalDeviceId(event, classification, config);
-  if (!canonicalDeviceId) {
-    return { alertCreated: false, dedupeKey: null, routingDeviceId: null };
+  if (!event.deviceId) {
+    return { alertCreated: false, dedupeKey: null };
   }
 
-  const effectiveEvent = { ...event, deviceId: canonicalDeviceId };
   const raw = event.raw || {};
-  const deviceIdStr = String(canonicalDeviceId);
+  const deviceIdStr = String(event.deviceId);
   const stateRef = firestore.collection(config.deviceStateCollection).doc(deviceIdStr);
 
-  const snapshot = buildStateSnapshot(effectiveEvent, classification, config);
+  const snapshot = buildStateSnapshot(event, classification, config);
   let effectiveClassification = classification;
   const writeSnapshot = { ...snapshot };
   delete writeSnapshot.source_ts_ms;
@@ -964,7 +959,7 @@ async function persistEvent({ firestore, config, event, classification }) {
       await processMovementTrip({
         firestore,
         config,
-        event: effectiveEvent,
+        event,
         sourceTsMs: snapshot.source_ts_ms,
       });
     } catch (error) {
@@ -1022,11 +1017,18 @@ async function persistEvent({ firestore, config, event, classification }) {
         ? 'geofence_enter'
         : 'geofence_exit');
 
-    const persistedEventId = effectiveEvent.eventId || buildSyntheticAlertEventId(effectiveEvent, effectiveClassification, snapshot.source_ts_ms);
+    const persistedEventId = effectiveClassification.vibrationAlarm
+      ? (
+        config.vibrationStrictDedupe
+          ? buildSyntheticVibrationEventId(event, snapshot.source_ts_ms)
+          : (event.eventId || buildSyntheticVibrationEventId(event, snapshot.source_ts_ms))
+      )
+      : (event.eventId || buildSyntheticAlertEventId(event, effectiveClassification, snapshot.source_ts_ms));
 
     const alertDocBase = {
       source_ts: snapshot.source_ts,
       device: { id: deviceIdStr, name: snapshot.device?.name || null },
+      flespi_device_id: deviceIdStr,
       event_id: persistedEventId,
       event_kind: alertKind,
       severity: effectiveClassification.severity,
@@ -1063,7 +1065,6 @@ async function persistEvent({ firestore, config, event, classification }) {
       dedupeKey: writeResult.id,
       eventKind: alertKind,
       classification: effectiveClassification,
-      routingDeviceId: deviceIdStr,
     };
   }
 
@@ -1072,7 +1073,6 @@ async function persistEvent({ firestore, config, event, classification }) {
     dedupeKey: null,
     eventKind: null,
     classification: effectiveClassification,
-    routingDeviceId: deviceIdStr,
   };
 }
 
@@ -1120,11 +1120,21 @@ module.exports = async function handler(req, res) {
     let skippedNoTokens = 0;
     let skippedNonAlert = 0;
     let skippedDuplicatedAlert = 0;
+    let suppressedConflictingGeofence = 0;
+    const geofenceBatchDirectionByKey = new Map();
 
     for (const event of events) {
       try {
-      if (!event.deviceId && config.defaultDeviceId) {
-        event.deviceId = config.defaultDeviceId;
+      if (config.webhookCanonicalDeviceIdStrict) {
+        event.deviceId = normalizeDeviceId(event.deviceId);
+        if (!event.deviceId && config.defaultDeviceId) {
+          event.deviceId = normalizeDeviceId(config.defaultDeviceId);
+        }
+      } else {
+        if (!event.deviceId && config.defaultDeviceId) {
+          event.deviceId = config.defaultDeviceId;
+        }
+        event.deviceId = normalizeDeviceId(event.deviceId);
       }
 
       const classification = classifyEvent(event, config);
@@ -1132,7 +1142,6 @@ module.exports = async function handler(req, res) {
       let persistenceResult = {
         alertCreated: false,
         dedupeKey: null,
-        routingDeviceId: null,
       };
 
       if (event.deviceId) {
@@ -1147,6 +1156,44 @@ module.exports = async function handler(req, res) {
 
       const effectiveClassification =
         persistenceResult.classification || classification;
+
+      if (effectiveClassification.vibrationAlarm && effectiveClassification.geofenceAlarm) {
+        writeLog('warn', 'event has vibration and geofence flags simultaneously; geofence suppressed', {
+          request_id: requestId,
+          event_id: event.eventId || null,
+          device_id: event.deviceId || null,
+          geofence_name: effectiveClassification.geofenceName || null,
+        });
+      }
+
+      if (
+        config.geofenceBatchConflictSuppress &&
+        effectiveClassification.geofenceAlarm &&
+        event.deviceId &&
+        effectiveClassification.geofenceName
+      ) {
+        const direction = effectiveClassification.geofenceEnter ? 'enter' : (effectiveClassification.geofenceExit ? 'exit' : null);
+        if (direction) {
+          const geofenceKey = `${String(event.deviceId)}:${String(effectiveClassification.geofenceName).toLowerCase()}`;
+          const seenDirection = geofenceBatchDirectionByKey.get(geofenceKey);
+
+          if (seenDirection && seenDirection !== direction) {
+            suppressedConflictingGeofence += 1;
+            skippedDuplicatedAlert += 1;
+            writeLog('warn', 'suppressed conflicting geofence transition in same batch', {
+              request_id: requestId,
+              event_id: event.eventId || null,
+              device_id: event.deviceId,
+              geofence_name: effectiveClassification.geofenceName,
+              seen_direction: seenDirection,
+              suppressed_direction: direction,
+            });
+            continue;
+          }
+
+          geofenceBatchDirectionByKey.set(geofenceKey, direction);
+        }
+      }
 
       if (!event.deviceId && !event.userId) {
         skippedNoRouting += 1;
@@ -1168,11 +1215,53 @@ module.exports = async function handler(req, res) {
       const tokenRefsByValue = await getActiveTokens({
         firestore,
         collectionName: config.tokenCollection,
-        deviceId: persistenceResult.routingDeviceId || event.deviceId,
+        deviceId: event.deviceId,
         userId: event.userId,
       });
 
-      const tokens = Array.from(tokenRefsByValue.keys());
+      let effectiveTokenRefsByValue = tokenRefsByValue;
+      let tokens = Array.from(effectiveTokenRefsByValue.keys());
+      let tokenLookupDeviceId = event.deviceId ? String(event.deviceId) : null;
+
+      // route by default app device id when webhook emits only flespi numeric id
+      if (
+        tokens.length === 0 &&
+        config.defaultDeviceId &&
+        event.deviceId &&
+        String(event.deviceId) !== String(config.defaultDeviceId)
+      ) {
+        const fallbackRefs = await getActiveTokens({
+          firestore,
+          collectionName: config.tokenCollection,
+          deviceId: config.defaultDeviceId,
+          userId: event.userId,
+        });
+
+        const fallbackTokens = Array.from(fallbackRefs.keys());
+        if (fallbackTokens.length > 0) {
+          effectiveTokenRefsByValue = fallbackRefs;
+          tokens = fallbackTokens;
+          tokenLookupDeviceId = String(config.defaultDeviceId);
+          writeLog('info', 'token routing fallback applied', {
+            request_id: requestId,
+            event_device_id: String(event.deviceId),
+            fallback_device_id: String(config.defaultDeviceId),
+            tokens: tokens.length,
+            event_kind: String(persistenceResult.eventKind || event.eventType || ''),
+          });
+        }
+      }
+
+      writeLog('info', 'token lookup resolved', {
+        request_id: requestId,
+        event_id: event.eventId || null,
+        event_device_id: event.deviceId ? String(event.deviceId) : null,
+        lookup_device_id: tokenLookupDeviceId,
+        user_id: event.userId ? String(event.userId) : null,
+        tokens: tokens.length,
+        event_kind: String(persistenceResult.eventKind || event.eventType || ''),
+      });
+
       if (tokens.length === 0) {
         skippedNoTokens += 1;
         continue;
@@ -1193,7 +1282,7 @@ module.exports = async function handler(req, res) {
       });
 
       const deactivated = await deactivateInvalidTokens({
-        tokenRefsByValue,
+        tokenRefsByValue: effectiveTokenRefsByValue,
         multicastResponse,
         tokens,
       });
@@ -1222,6 +1311,7 @@ module.exports = async function handler(req, res) {
       skipped_no_routing: skippedNoRouting,
       skipped_non_alert: skippedNonAlert,
       skipped_duplicated_alert: skippedDuplicatedAlert,
+      suppressed_conflicting_geofence: suppressedConflictingGeofence,
       skipped_no_tokens: skippedNoTokens,
       sent,
       failed,
@@ -1236,6 +1326,7 @@ module.exports = async function handler(req, res) {
       skipped_no_routing: skippedNoRouting,
       skipped_non_alert: skippedNonAlert,
       skipped_duplicated_alert: skippedDuplicatedAlert,
+      suppressed_conflicting_geofence: suppressedConflictingGeofence,
       skipped_no_tokens: skippedNoTokens,
       sent,
       failed,
